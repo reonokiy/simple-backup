@@ -1,0 +1,15 @@
+apiVersion: v2
+name: simple-backup-operator
+description: Kubernetes operator for managing BackupJob resources
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - backup
+  - operator
+  - kubernetes
+  - crd
+home: https://github.com/reonokiy/simple-backup
+maintainers:
+  - name: reonokiy
+    email: reonokiy@nokiy.net

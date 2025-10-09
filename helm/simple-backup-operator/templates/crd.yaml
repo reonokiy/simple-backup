@@ -1,0 +1,163 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: backupjobs.backup.simple-backup.io
+spec:
+  group: backup.simple-backup.io
+  names:
+    kind: BackupJob
+    listKind: BackupJobList
+    plural: backupjobs
+    singular: backupjob
+    shortNames:
+    - bj
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            required:
+            - source
+            - destination
+            properties:
+              source:
+                type: object
+                required:
+                - path
+                properties:
+                  path:
+                    type: string
+                    description: Path to backup
+                  pvcName:
+                    type: string
+                    description: PVC to mount for backup source
+              destination:
+                type: object
+                required:
+                - service
+                properties:
+                  service:
+                    type: string
+                    enum: [s3, azblob, gcs, oss, obs, cos, webdav, fs]
+                    description: Storage service type
+                  root:
+                    type: string
+                    description: Root path in destination storage
+                  secretRef:
+                    type: string
+                    description: Reference to secret containing credentials
+              compression:
+                type: string
+                enum: [none, tar, tar.gz, tar.bz2, tar.xz, tar.zst, zip, gzip]
+                default: tar.zst
+                description: Compression format
+              archiveName:
+                type: string
+                description: Custom archive name (default auto-generated)
+              schedule:
+                type: string
+                description: Cron schedule expression
+              retention:
+                type: object
+                properties:
+                  maxBackups:
+                    type: integer
+                    minimum: 0
+                    default: 0
+                  daily:
+                    type: integer
+                    minimum: 0
+                    default: 7
+                  weekly:
+                    type: integer
+                    minimum: 0
+                    default: 4
+                  monthly:
+                    type: integer
+                    minimum: 0
+                    default: 6
+                  yearly:
+                    type: integer
+                    minimum: 0
+                    default: 2
+              encryption:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                    description: Enable age encryption
+                  recipientSecretRef:
+                    type: object
+                    description: Secret containing age public key
+                    required:
+                    - name
+                    - key
+                    properties:
+                      name:
+                        type: string
+                        description: Secret name
+                      key:
+                        type: string
+                        description: Key within secret
+              resources:
+                type: object
+                properties:
+                  limits:
+                    type: object
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                  requests:
+                    type: object
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+              suspend:
+                type: boolean
+                default: false
+                description: Suspend the backup job
+          status:
+            type: object
+            properties:
+              lastBackupTime:
+                type: string
+                format: date-time
+              lastBackupStatus:
+                type: string
+                enum: [Success, Failed, Running]
+              nextScheduledTime:
+                type: string
+                format: date-time
+              backupCount:
+                type: integer
+              message:
+                type: string
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Service
+      type: string
+      jsonPath: .spec.destination.service
+    - name: Schedule
+      type: string
+      jsonPath: .spec.schedule
+    - name: Last Backup
+      type: string
+      jsonPath: .status.lastBackupTime
+    - name: Status
+      type: string
+      jsonPath: .status.lastBackupStatus
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp

@@ -1,0 +1,14 @@
+services:
+  simple-backup:
+    build: .
+    image: simple-backup:latest
+    container_name: simple-backup
+    env_file:
+      - .env
+    volumes:
+      - /path/to/your/data:/data:ro
+      - backup-dest:/backups
+    restart: unless-stopped
+
+volumes:
+  backup-dest:
