@@ -36,8 +36,8 @@ spec:
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command:
-        - python
-        - operator.py
+        - /usr/bin/python3
+        - backup_operator.py
         env:
         - name: WATCH_NAMESPACE
           value: {{ .Values.watchNamespace | quote }}

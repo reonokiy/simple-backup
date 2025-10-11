@@ -78,10 +78,10 @@ tests:
         prometheus.io/port: "8080"
     asserts:
       - equal:
-          path: spec.template.metadata.annotations.prometheus\.io/scrape
+          path: spec.template.metadata.annotations["prometheus.io/scrape"]
           value: "true"
       - equal:
-          path: spec.template.metadata.annotations.prometheus\.io/port
+          path: spec.template.metadata.annotations["prometheus.io/port"]
           value: "8080"
 
   - it: should set node selector

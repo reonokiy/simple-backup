@@ -14,7 +14,7 @@ test-integration:
 
 test-helm:
 	@echo "Running Helm chart tests..."
-	helm unittest . -v
+	helm unittest .
 
 lint-helm:
 	@echo "Linting Helm chart..."

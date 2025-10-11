@@ -16,17 +16,15 @@ tests:
           path: rules
           content:
             apiGroups:
-              - backup.simple-backup.nokiy.net
+              - simple-backup.nokiy.net
             resources:
               - backupjobs
             verbs:
               - get
               - list
               - watch
-              - create
               - update
               - patch
-              - delete
 
   - it: should have permissions for backupjobs status
     asserts:
@@ -34,7 +32,7 @@ tests:
           path: rules
           content:
             apiGroups:
-              - backup.simple-backup.nokiy.net
+              - simple-backup.nokiy.net
             resources:
               - backupjobs/status
             verbs:
@@ -51,6 +49,7 @@ tests:
               - batch
             resources:
               - cronjobs
+              - jobs
             verbs:
               - get
               - list
@@ -68,10 +67,13 @@ tests:
             apiGroups:
               - ""
             resources:
+              - configmaps
               - secrets
+              - persistentvolumeclaims
             verbs:
               - get
               - list
+              - watch
 
   - it: should have permissions for events
     asserts:

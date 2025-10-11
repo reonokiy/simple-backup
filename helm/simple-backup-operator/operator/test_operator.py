@@ -59,7 +59,7 @@ class TestBackupJobController:
         with patch('backup_operator.config.load_incluster_config') as mock_incluster:
             controller = BackupJobController()
             mock_incluster.assert_called_once()
-            assert controller.group == "backup.simple-backup.nokiy.net"
+            assert controller.group == "simple-backup.nokiy.net"
             assert controller.version == "v1alpha1"
             assert controller.plural == "backupjobs"
     
@@ -252,7 +252,7 @@ class TestBackupJobController:
         
         assert len(cronjob.metadata.owner_references) == 1
         owner_ref = cronjob.metadata.owner_references[0]
-        assert owner_ref.api_version == 'backup.simple-backup.nokiy.net/v1alpha1'
+        assert owner_ref.api_version == 'simple-backup.nokiy.net/v1alpha1'
         assert owner_ref.kind == 'BackupJob'
         assert owner_ref.name == 'test-backup'
         assert owner_ref.uid == 'test-uid-123'
@@ -319,7 +319,7 @@ class TestBackupJobController:
         controller.update_status('test-backup', 'default', status_update)
         
         controller.custom_api.patch_namespaced_custom_object_status.assert_called_once_with(
-            group='backup.simple-backup.nokiy.net',
+            group='simple-backup.nokiy.net',
             version='v1alpha1',
             namespace='default',
             plural='backupjobs',

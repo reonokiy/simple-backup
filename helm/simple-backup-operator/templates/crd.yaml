@@ -1,9 +1,9 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: backupjobs.backup.simple-backup.nokiy.net
+  name: backupjobs.simple-backup.nokiy.net
 spec:
-  group: backup.simple-backup.nokiy.net
+  group: simple-backup.nokiy.net
   names:
     kind: BackupJob
     listKind: BackupJobList
@@ -54,7 +54,7 @@ spec:
                     description: Reference to secret containing credentials
               compression:
                 type: string
-                enum: [none, tar, tar.gz, tar.bz2, tar.xz, tar.zst, zip, gzip]
+                enum: [tar, tar.gz, tar.bz2, tar.xz, tar.zst, zip, gzip]
                 default: tar.zst
                 description: Compression format
               archiveName:

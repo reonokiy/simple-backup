@@ -8,19 +8,22 @@ tests:
           of: CustomResourceDefinition
       - equal:
           path: metadata.name
-          value: backupjobs.backup.simple-backup.nokiy.net
+          value: backupjobs.simple-backup.nokiy.net
 
   - it: should have correct group and version
     asserts:
       - equal:
           path: spec.group
-          value: backup.simple-backup.nokiy.net
-      - contains:
-          path: spec.versions
-          content:
-            name: v1alpha1
-            served: true
-            storage: true
+          value: simple-backup.nokiy.net
+      - equal:
+          path: spec.versions[0].name
+          value: v1alpha1
+      - equal:
+          path: spec.versions[0].served
+          value: true
+      - equal:
+          path: spec.versions[0].storage
+          value: true
 
   - it: should be namespaced
     asserts:

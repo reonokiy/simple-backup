@@ -23,7 +23,7 @@ class BackupJobController:
         self.batch_api = client.BatchV1Api()
         self.core_api = client.CoreV1Api()
         
-        self.group = "backup.simple-backup.nokiy.net"
+        self.group = "simple-backup.nokiy.net"
         self.version = "v1alpha1"
         self.plural = "backupjobs"
         
