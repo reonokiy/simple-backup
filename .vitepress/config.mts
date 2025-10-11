@@ -26,7 +26,8 @@ export default defineConfig({
         text: 'Deployment',
         items: [
           { text: 'Docker', link: '/docker' },
-          { text: 'Kubernetes', link: '/kubernetes' }
+          { text: 'Kubernetes', link: '/kubernetes' },
+          { text: 'Systemd', link: '/systemd' }
         ]
       }
     ],

@@ -35,10 +35,31 @@ cd helm/simple-backup-operator/operator
 uv sync
 ```
 
-Run tests:
+## Testing
+
+See [TESTING.md](TESTING.md) for comprehensive testing documentation.
+
+### Quick Start
+
+Run all tests:
 
 ```bash
-uv run pytest
+cd helm/simple-backup-operator
+make test-all
+```
+
+Run operator unit tests only:
+
+```bash
+cd helm/simple-backup-operator
+make test-operator
+```
+
+Run Helm chart tests only:
+
+```bash
+cd helm/simple-backup-operator
+make test-helm
 ```
 
 ## Building the Operator Image
