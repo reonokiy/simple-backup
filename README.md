@@ -27,7 +27,7 @@ python main.py
 
 ## Documentation
 
-完整文档请访问: https://simple-backup.nokiy.net
+Full documentation: https://simple-backup.nokiy.net
 
 - [Configuration](https://simple-backup.nokiy.net/configuration)
 - [Docker Deployment](https://simple-backup.nokiy.net/docker)
