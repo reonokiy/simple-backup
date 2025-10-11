@@ -373,20 +373,24 @@ jobs:
           
           kubectl wait --for=condition=ready pod/fs-backup-verifier --timeout=60s
           
-          # Copy backup file from completed pod to verifier pod
+          # Copy backup file from completed pod to local, then to verifier pod
           BACKUP_FILE=$(kubectl logs $POD_FS -c backup | grep -oP '/tmp/backups/[^ ]+\.tar\.zst' | head -1)
+          BACKUP_FILENAME=$(basename $BACKUP_FILE)
           echo "Copying backup file: $BACKUP_FILE"
-          kubectl cp $POD_FS:/tmp/backups/ fs-backup-verifier:/backups/ -c backup
+          
+          mkdir -p /tmp/e2e-backups
+          kubectl cp $POD_FS:$BACKUP_FILE /tmp/e2e-backups/$BACKUP_FILENAME -c backup
+          kubectl cp /tmp/e2e-backups/$BACKUP_FILENAME fs-backup-verifier:/backups/$BACKUP_FILENAME
           
           # Extract and verify
-          BACKUP_FILENAME=$(basename $BACKUP_FILE)
           echo "Extracting /backups/$BACKUP_FILENAME..."
           kubectl exec fs-backup-verifier -- sh -c "tar -xf /backups/$BACKUP_FILENAME -C /tmp/"
           RESTORED_DATA_FS=$(kubectl exec fs-backup-verifier -- cat /tmp/data/test.txt)
           echo "Restored data (FS): $RESTORED_DATA_FS"
           
-          # Cleanup verifier pod
+          # Cleanup
           kubectl delete pod fs-backup-verifier
+          rm -rf /tmp/e2e-backups
           
           if [ "$ORIGINAL_DATA" != "$RESTORED_DATA_FS" ]; then
             echo "ERROR: FS backup data mismatch!"
