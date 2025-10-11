@@ -72,9 +72,12 @@ tests:
       - equal:
           path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.destination.type
           value: object
-      - contains:
-          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.destination.required
-          content: service
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.destination.oneOf
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.destination.properties.service
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.destination.properties.storageConfigRef
 
   - it: should have optional fields in schema
     asserts:
