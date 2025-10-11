@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   srcDir: "docs",
-  base: "/simple-backup/",
+  base: "/",
   
   title: "Simple Backup",
   description: "A simple backup tool for selfhosted services",

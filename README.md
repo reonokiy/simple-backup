@@ -32,6 +32,7 @@ Full documentation: https://simple-backup.nokiy.net
 - [Configuration](https://simple-backup.nokiy.net/configuration)
 - [Docker Deployment](https://simple-backup.nokiy.net/docker)
 - [Kubernetes Deployment](https://simple-backup.nokiy.net/kubernetes)
+- [Kubernetes Operator](https://simple-backup.nokiy.net/helm-operator)
 - [Compression](https://simple-backup.nokiy.net/compression)
 - [Encryption](https://simple-backup.nokiy.net/encryption)
 - [Scheduling](https://simple-backup.nokiy.net/scheduling)
