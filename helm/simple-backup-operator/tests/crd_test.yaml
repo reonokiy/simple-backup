@@ -8,13 +8,13 @@ tests:
           of: CustomResourceDefinition
       - equal:
           path: metadata.name
-          value: backupjobs.backup.simple-backup.io
+          value: backupjobs.backup.simple-backup.nokiy.net
 
   - it: should have correct group and version
     asserts:
       - equal:
           path: spec.group
-          value: backup.simple-backup.io
+          value: backup.simple-backup.nokiy.net
       - contains:
           path: spec.versions
           content:

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from main import test_destination_connectivity, validate_destinations
+from main import validate_destination_connectivity, validate_destinations
 
 
 def test_destination_connectivity_success():
@@ -16,7 +16,7 @@ def test_destination_connectivity_success():
             'storage': {'bucket': 'test-bucket'}
         }
         
-        result = test_destination_connectivity(dest)
+        result = validate_destination_connectivity(dest)
         
         assert result is True
         mock_op.write.assert_called_once()
@@ -35,7 +35,7 @@ def test_destination_connectivity_write_failure():
             'storage': {'bucket': 'test-bucket'}
         }
         
-        result = test_destination_connectivity(dest)
+        result = validate_destination_connectivity(dest)
         
         assert result is False
 
@@ -52,7 +52,7 @@ def test_destination_connectivity_read_failure():
             'storage': {'bucket': 'test-bucket'}
         }
         
-        result = test_destination_connectivity(dest)
+        result = validate_destination_connectivity(dest)
         
         assert result is False
 
@@ -69,7 +69,7 @@ def test_destination_connectivity_data_mismatch():
             'storage': {'bucket': 'test-bucket'}
         }
         
-        result = test_destination_connectivity(dest)
+        result = validate_destination_connectivity(dest)
         
         assert result is False
 
@@ -80,7 +80,7 @@ def test_validate_destinations_all_success():
         {'service': 'azblob', 'root': 'backups/', 'storage': {'container': 'container1'}},
     ]
     
-    with patch('main.test_destination_connectivity', return_value=True):
+    with patch('main.validate_destination_connectivity', return_value=True):
         result = validate_destinations(destinations)
         
         assert result is True
@@ -97,7 +97,7 @@ def test_validate_destinations_partial_failure():
             return True
         return False
     
-    with patch('main.test_destination_connectivity', side_effect=mock_connectivity):
+    with patch('main.validate_destination_connectivity', side_effect=mock_connectivity):
         result = validate_destinations(destinations)
         
         assert result is False
@@ -109,7 +109,7 @@ def test_validate_destinations_all_failure():
         {'service': 'azblob', 'root': 'backups/', 'storage': {'container': 'container1'}},
     ]
     
-    with patch('main.test_destination_connectivity', return_value=False):
+    with patch('main.validate_destination_connectivity', return_value=False):
         result = validate_destinations(destinations)
         
         assert result is False
@@ -128,7 +128,7 @@ def test_validate_destinations_empty_root():
             'storage': {'bucket': 'test-bucket'}
         }
         
-        result = test_destination_connectivity(dest)
+        result = validate_destination_connectivity(dest)
         
         assert result is True
         call_args = mock_op.write.call_args[0]

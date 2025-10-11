@@ -75,6 +75,16 @@ def load_config() -> Dict[str, Any]:
     
     destinations = file_config.get('destinations', [])
     
+    if not destinations:
+        legacy_dest_service = os.getenv('BACKUP_DEST_SERVICE') or file_config.get('dest_service')
+        if legacy_dest_service:
+            legacy_dest = {
+                'service': legacy_dest_service,
+                'root': os.getenv('BACKUP_DEST_ROOT') or file_config.get('dest_root', ''),
+                'storage': file_config.get('storage', {})
+            }
+            destinations = [legacy_dest]
+    
     config['destinations'] = destinations
     
     if not config['source_path']:
@@ -172,7 +182,7 @@ def create_dest_operator(service_type: str, storage_config: Optional[Dict[str, A
     return opendal.Operator(service_type, **config)
 
 
-def test_destination_connectivity(dest: Dict[str, Any]) -> bool:
+def validate_destination_connectivity(dest: Dict[str, Any]) -> bool:
     dest_service = dest['service']
     dest_root = dest.get('root', '')
     storage_config = dest.get('storage', {})
@@ -210,7 +220,7 @@ def validate_destinations(destinations: List[Dict[str, Any]]) -> bool:
     for idx, dest in enumerate(destinations, 1):
         dest_service = dest['service']
         logger.info(f"Testing destination {idx}/{len(destinations)}: {dest_service}")
-        success = test_destination_connectivity(dest)
+        success = validate_destination_connectivity(dest)
         results.append({'destination': dest_service, 'success': success})
     
     failed = [r for r in results if not r['success']]

@@ -23,7 +23,7 @@ class BackupJobController:
         self.batch_api = client.BatchV1Api()
         self.core_api = client.CoreV1Api()
         
-        self.group = "backup.simple-backup.io"
+        self.group = "backup.simple-backup.nokiy.net"
         self.version = "v1alpha1"
         self.plural = "backupjobs"
         
@@ -221,8 +221,7 @@ class BackupJobController:
             self.delete_cronjob(name, namespace)
     
     def run(self):
-        logger.info("Starting BackupJob controller...")
-        
+        logger.info(f"Starting BackupJob controller for {self.group}/{self.version}")
         w = watch.Watch()
         for event in w.stream(
             self.custom_api.list_cluster_custom_object,
@@ -232,6 +231,8 @@ class BackupJobController:
         ):
             try:
                 self.handle_event(event)
+            except StopIteration:
+                raise
             except Exception as e:
                 logger.error(f"Error handling event: {e}", exc_info=True)
 

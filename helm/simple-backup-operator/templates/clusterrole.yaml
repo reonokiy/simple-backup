@@ -6,7 +6,7 @@ metadata:
     {{- include "simple-backup-operator.labels" . | nindent 4 }}
 rules:
 - apiGroups:
-  - backup.simple-backup.io
+  - backup.simple-backup.nokiy.net
   resources:
   - backupjobs
   verbs:
@@ -18,7 +18,7 @@ rules:
   - patch
   - delete
 - apiGroups:
-  - backup.simple-backup.io
+  - backup.simple-backup.nokiy.net
   resources:
   - backupjobs/status
   verbs:

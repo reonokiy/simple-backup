@@ -16,7 +16,7 @@ tests:
           path: rules
           content:
             apiGroups:
-              - backup.simple-backup.io
+              - backup.simple-backup.nokiy.net
             resources:
               - backupjobs
             verbs:
@@ -34,7 +34,7 @@ tests:
           path: rules
           content:
             apiGroups:
-              - backup.simple-backup.io
+              - backup.simple-backup.nokiy.net
             resources:
               - backupjobs/status
             verbs:

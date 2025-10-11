@@ -1,12 +1,12 @@
 import pytest
 from unittest.mock import Mock, patch
-from operator import BackupJobController
+from backup_operator import BackupJobController
 from kubernetes import client
 
 
 @pytest.fixture
 def controller():
-    with patch('operator.config'):
+    with patch('backup_operator.config'):
         return BackupJobController()
 
 

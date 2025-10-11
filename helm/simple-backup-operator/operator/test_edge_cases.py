@@ -1,12 +1,12 @@
 import pytest
 from unittest.mock import Mock, patch
-from operator import BackupJobController
+from backup_operator import BackupJobController
 from kubernetes.client.rest import ApiException
 
 
 @pytest.fixture
 def controller():
-    with patch('operator.config'):
+    with patch('backup_operator.config'):
         return BackupJobController()
 
 
@@ -51,7 +51,7 @@ class TestEdgeCases:
         cronjob = call_args[1]['body']
         container = cronjob.spec.job_template.spec.template.spec.containers[0]
         
-        env_dict = {e.name: e.value for e in container.env if e.value}
+        env_dict = {e.name: e.value for e in container.env if e.value is not None}
         assert env_dict['BACKUP_ENCRYPTION_ENABLED'] == 'true'
         
         encryption_recipient_exists = any(
@@ -77,7 +77,7 @@ class TestEdgeCases:
         cronjob = call_args[1]['body']
         container = cronjob.spec.job_template.spec.template.spec.containers[0]
         
-        env_dict = {e.name: e.value for e in container.env if e.value}
+        env_dict = {e.name: e.value for e in container.env if e.value is not None}
         assert env_dict['BACKUP_RETENTION_MAX_BACKUPS'] == '0'
         assert env_dict['BACKUP_RETENTION_DAILY'] == '7'
         assert env_dict['BACKUP_RETENTION_WEEKLY'] == '4'
@@ -101,7 +101,7 @@ class TestEdgeCases:
         cronjob = call_args[1]['body']
         container = cronjob.spec.job_template.spec.template.spec.containers[0]
         
-        env_dict = {e.name: e.value for e in container.env if e.value}
+        env_dict = {e.name: e.value for e in container.env if e.value is not None}
         assert env_dict['BACKUP_ARCHIVE_NAME'] == ''
     
     def test_empty_destination_root(self, controller):
@@ -120,7 +120,7 @@ class TestEdgeCases:
         cronjob = call_args[1]['body']
         container = cronjob.spec.job_template.spec.template.spec.containers[0]
         
-        env_dict = {e.name: e.value for e in container.env if e.value}
+        env_dict = {e.name: e.value for e in container.env if e.value is not None}
         assert env_dict['BACKUP_DEST_ROOT'] == ''
     
     def test_missing_destination_root(self, controller):
@@ -139,8 +139,8 @@ class TestEdgeCases:
         cronjob = call_args[1]['body']
         container = cronjob.spec.job_template.spec.template.spec.containers[0]
         
-        env_dict = {e.name: e.value for e in container.env if e.value}
-        assert env_dict.get('BACKUP_DEST_ROOT') == ''
+        env_dict = {e.name: e.value for e in container.env if e.value is not None}
+        assert env_dict.get('BACKUP_DEST_ROOT', '') == ''
     
     def test_cronjob_labels_and_selectors(self, controller):
         backupjob = {
@@ -294,7 +294,7 @@ class TestEdgeCases:
         cronjob = call_args[1]['body']
         container = cronjob.spec.job_template.spec.template.spec.containers[0]
         
-        env_dict = {e.name: e.value for e in container.env if e.value}
+        env_dict = {e.name: e.value for e in container.env if e.value is not None}
         assert env_dict['BACKUP_SOURCE_PATH'] == '/data/with spaces/and-special_chars'
         assert env_dict['BACKUP_DEST_ROOT'] == 'backups/path with spaces/'
     
@@ -321,7 +321,7 @@ class TestEdgeCases:
         cronjob = call_args[1]['body']
         container = cronjob.spec.job_template.spec.template.spec.containers[0]
         
-        env_dict = {e.name: e.value for e in container.env if e.value}
+        env_dict = {e.name: e.value for e in container.env if e.value is not None}
         assert env_dict['BACKUP_RETENTION_MAX_BACKUPS'] == '0'
         assert env_dict['BACKUP_RETENTION_DAILY'] == '0'
         assert env_dict['BACKUP_RETENTION_WEEKLY'] == '0'

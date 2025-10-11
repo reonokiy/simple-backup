@@ -44,7 +44,8 @@ def test_run_backup_job_failure():
 
 def test_main_restore_command():
     with patch('main.restore') as mock_restore, \
-         patch('sys.argv', ['main.py', 'restore', 'backup.tar.gz', '/dest', '--dest-service', 'fs']):
+         patch('sys.argv', ['main.py', 'restore', 'backup.tar.gz', '/dest', '--dest-service', 'fs']), \
+         patch.dict(os.environ, {'BACKUP_SOURCE_PATH': '/test/source', 'BACKUP_DEST_SERVICE': 'fs'}):
         
         mock_restore.return_value = True
         
@@ -52,12 +53,13 @@ def test_main_restore_command():
             main()
         
         assert exc_info.value.code == 0
-        mock_restore.assert_called_once_with('backup.tar.gz', '/dest', 'fs', None)
+        mock_restore.assert_called_once_with('backup.tar.gz', '/dest', 'fs', None, {})
 
 
 def test_main_restore_command_with_identity():
     with patch('main.restore') as mock_restore, \
-         patch('sys.argv', ['main.py', 'restore', 'backup.tar.gz.age', '/dest', '--identity-key', 'AGE-SECRET-KEY-123']):
+         patch('sys.argv', ['main.py', 'restore', 'backup.tar.gz.age', '/dest', '--identity-key', 'AGE-SECRET-KEY-123']), \
+         patch.dict(os.environ, {'BACKUP_SOURCE_PATH': '/test/source', 'BACKUP_DEST_SERVICE': 'fs'}):
         
         mock_restore.return_value = True
         
@@ -65,12 +67,13 @@ def test_main_restore_command_with_identity():
             main()
         
         assert exc_info.value.code == 0
-        mock_restore.assert_called_once_with('backup.tar.gz.age', '/dest', 'fs', 'AGE-SECRET-KEY-123')
+        mock_restore.assert_called_once_with('backup.tar.gz.age', '/dest', 'fs', 'AGE-SECRET-KEY-123', {})
 
 
 def test_main_restore_command_failure():
     with patch('main.restore') as mock_restore, \
-         patch('sys.argv', ['main.py', 'restore', 'backup.tar.gz', '/dest']):
+         patch('sys.argv', ['main.py', 'restore', 'backup.tar.gz', '/dest']), \
+         patch.dict(os.environ, {'BACKUP_SOURCE_PATH': '/test/source', 'BACKUP_DEST_SERVICE': 'fs'}):
         
         mock_restore.return_value = False
         
@@ -83,7 +86,7 @@ def test_main_restore_command_failure():
 def test_main_restore_command_with_env_identity():
     with patch('main.restore') as mock_restore, \
          patch('sys.argv', ['main.py', 'restore', 'backup.tar.gz.age', '/dest']), \
-         patch.dict(os.environ, {'AGE_IDENTITY_KEY': 'AGE-SECRET-KEY-ENV'}):
+         patch.dict(os.environ, {'AGE_IDENTITY_KEY': 'AGE-SECRET-KEY-ENV', 'BACKUP_SOURCE_PATH': '/test/source', 'BACKUP_DEST_SERVICE': 'fs'}):
         
         mock_restore.return_value = True
         
@@ -91,12 +94,13 @@ def test_main_restore_command_with_env_identity():
             main()
         
         assert exc_info.value.code == 0
-        mock_restore.assert_called_once_with('backup.tar.gz.age', '/dest', 'fs', 'AGE-SECRET-KEY-ENV')
+        mock_restore.assert_called_once_with('backup.tar.gz.age', '/dest', 'fs', 'AGE-SECRET-KEY-ENV', {})
 
 
 def test_main_list_command():
     with patch('main.list_available_backups') as mock_list, \
-         patch('sys.argv', ['main.py', 'list', '--dest-service', 'fs', '--dest-root', '/backups']):
+         patch('sys.argv', ['main.py', 'list', '--dest-service', 'fs', '--dest-root', '/backups']), \
+         patch.dict(os.environ, {'BACKUP_SOURCE_PATH': '/test/source', 'BACKUP_DEST_SERVICE': 'fs'}):
         
         mock_list.return_value = []
         
@@ -104,12 +108,13 @@ def test_main_list_command():
             main()
         
         assert exc_info.value.code == 0
-        mock_list.assert_called_once_with('fs', '/backups')
+        mock_list.assert_called_once_with('fs', '/backups', {})
 
 
 def test_main_list_command_defaults():
     with patch('main.list_available_backups') as mock_list, \
-         patch('sys.argv', ['main.py', 'list']):
+         patch('sys.argv', ['main.py', 'list']), \
+         patch.dict(os.environ, {'BACKUP_SOURCE_PATH': '/test/source', 'BACKUP_DEST_SERVICE': 'fs'}):
         
         mock_list.return_value = []
         
@@ -117,18 +122,19 @@ def test_main_list_command_defaults():
             main()
         
         assert exc_info.value.code == 0
-        mock_list.assert_called_once_with('fs', '')
+        mock_list.assert_called_once_with('fs', '', {})
 
 
 def test_main_backup_command_one_time():
     with patch('main.load_config') as mock_load_config, \
          patch('main.backup') as mock_backup, \
-         patch('sys.argv', ['main.py']):
+         patch('main.validate_destinations') as mock_validate, \
+         patch('sys.argv', ['main.py']), \
+         patch.dict(os.environ, {'BACKUP_SOURCE_PATH': '/test/source', 'BACKUP_DEST_SERVICE': 'fs'}):
         
         mock_load_config.return_value = {
             'source_path': '/test/source',
-            'dest_service': 'fs',
-            'dest_root': '/test/dest',
+            'destinations': [{'service': 'fs', 'root': '/test/dest', 'storage': {}}],
             'compression': 'tar.gz',
             'archive_name': 'test',
             'cron_schedule': None,
@@ -141,6 +147,7 @@ def test_main_backup_command_one_time():
             'encryption_recipient': None
         }
         mock_backup.return_value = True
+        mock_validate.return_value = True
         
         with pytest.raises(SystemExit) as exc_info:
             main()
@@ -152,12 +159,12 @@ def test_main_backup_command_one_time():
 def test_main_backup_command_one_time_failure():
     with patch('main.load_config') as mock_load_config, \
          patch('main.backup') as mock_backup, \
-         patch('sys.argv', ['main.py']):
+         patch('sys.argv', ['main.py']), \
+         patch.dict(os.environ, {'BACKUP_SOURCE_PATH': '/test/source', 'BACKUP_DEST_SERVICE': 'fs'}):
         
         mock_load_config.return_value = {
             'source_path': '/test/source',
-            'dest_service': 'fs',
-            'dest_root': '/test/dest',
+            'destinations': [{'service': 'fs', 'root': '/test/dest', 'storage': {}}],
             'compression': 'tar.gz',
             'archive_name': 'test',
             'cron_schedule': None,
@@ -179,7 +186,8 @@ def test_main_backup_command_one_time_failure():
 
 def test_main_backup_command_config_error():
     with patch('main.load_config') as mock_load_config, \
-         patch('sys.argv', ['main.py']):
+         patch('sys.argv', ['main.py']), \
+         patch.dict(os.environ, {'BACKUP_SOURCE_PATH': '/test/source', 'BACKUP_DEST_SERVICE': 'fs'}):
         
         mock_load_config.side_effect = ValueError("Config error")
         
@@ -191,14 +199,15 @@ def test_main_backup_command_config_error():
 
 def test_main_backup_command_with_scheduler():
     with patch('main.load_config') as mock_load_config, \
-         patch('main.BlockingScheduler') as mock_scheduler_class, \
-         patch('main.signal.signal') as mock_signal, \
-         patch('sys.argv', ['main.py']):
+          patch('main.BlockingScheduler') as mock_scheduler_class, \
+          patch('main.signal.signal') as mock_signal, \
+          patch('main.validate_destinations') as mock_validate, \
+          patch('sys.argv', ['main.py']), \
+          patch.dict(os.environ, {'BACKUP_SOURCE_PATH': '/test/source', 'BACKUP_DEST_SERVICE': 'fs'}):
         
         mock_load_config.return_value = {
             'source_path': '/test/source',
-            'dest_service': 'fs',
-            'dest_root': '/test/dest',
+            'destinations': [{'service': 'fs', 'root': '/test/dest', 'storage': {}}],
             'compression': 'tar.gz',
             'archive_name': 'test',
             'cron_schedule': '0 0 * * *',
@@ -211,6 +220,7 @@ def test_main_backup_command_with_scheduler():
             'encryption_recipient': None
         }
         
+        mock_validate.return_value = True
         mock_scheduler = MagicMock()
         mock_scheduler_class.return_value = mock_scheduler
         

@@ -2,12 +2,12 @@ import pytest
 from unittest.mock import Mock, MagicMock, patch, call
 from kubernetes import client
 from kubernetes.client.rest import ApiException
-from operator import BackupJobController
+from backup_operator import BackupJobController
 
 
 @pytest.fixture
 def controller():
-    with patch('operator.config'):
+    with patch('backup_operator.config'):
         return BackupJobController()
 
 
@@ -56,16 +56,16 @@ def sample_backupjob():
 
 class TestBackupJobController:
     def test_init_incluster_config(self):
-        with patch('operator.config.load_incluster_config') as mock_incluster:
+        with patch('backup_operator.config.load_incluster_config') as mock_incluster:
             controller = BackupJobController()
             mock_incluster.assert_called_once()
-            assert controller.group == "backup.simple-backup.io"
+            assert controller.group == "backup.simple-backup.nokiy.net"
             assert controller.version == "v1alpha1"
             assert controller.plural == "backupjobs"
     
     def test_init_fallback_to_kube_config(self):
-        with patch('operator.config.load_incluster_config', side_effect=Exception()):
-            with patch('operator.config.load_kube_config') as mock_kube:
+        with patch('backup_operator.config.load_incluster_config', side_effect=Exception()):
+            with patch('backup_operator.config.load_kube_config') as mock_kube:
                 controller = BackupJobController()
                 mock_kube.assert_called_once()
     
@@ -252,7 +252,7 @@ class TestBackupJobController:
         
         assert len(cronjob.metadata.owner_references) == 1
         owner_ref = cronjob.metadata.owner_references[0]
-        assert owner_ref.api_version == 'backup.simple-backup.io/v1alpha1'
+        assert owner_ref.api_version == 'backup.simple-backup.nokiy.net/v1alpha1'
         assert owner_ref.kind == 'BackupJob'
         assert owner_ref.name == 'test-backup'
         assert owner_ref.uid == 'test-uid-123'
@@ -319,7 +319,7 @@ class TestBackupJobController:
         controller.update_status('test-backup', 'default', status_update)
         
         controller.custom_api.patch_namespaced_custom_object_status.assert_called_once_with(
-            group='backup.simple-backup.io',
+            group='backup.simple-backup.nokiy.net',
             version='v1alpha1',
             namespace='default',
             plural='backupjobs',
@@ -388,7 +388,7 @@ class TestBackupJobController:
         
         controller.handle_event = Mock(side_effect=StopIteration)
         
-        with patch('operator.watch.Watch', return_value=mock_watch):
+        with patch('backup_operator.watch.Watch', return_value=mock_watch):
             with pytest.raises(StopIteration):
                 controller.run()
         
@@ -410,7 +410,7 @@ class TestBackupJobController:
         
         controller.handle_event = Mock(side_effect=[Exception("Test error"), StopIteration])
         
-        with patch('operator.watch.Watch', return_value=mock_watch):
+        with patch('backup_operator.watch.Watch', return_value=mock_watch):
             with pytest.raises(StopIteration):
                 controller.run()
         

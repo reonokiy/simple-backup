@@ -4,15 +4,15 @@ from unittest.mock import Mock, patch
 
 @pytest.fixture
 def mock_k8s_config():
-    with patch('operator.config') as mock_config:
+    with patch('backup_operator.config') as mock_config:
         yield mock_config
 
 
 @pytest.fixture
 def mock_apis():
-    with patch('operator.client.CustomObjectsApi') as mock_custom, \
-         patch('operator.client.BatchV1Api') as mock_batch, \
-         patch('operator.client.CoreV1Api') as mock_core:
+    with patch('backup_operator.client.CustomObjectsApi') as mock_custom, \
+         patch('backup_operator.client.BatchV1Api') as mock_batch, \
+         patch('backup_operator.client.CoreV1Api') as mock_core:
         yield {
             'custom': mock_custom.return_value,
             'batch': mock_batch.return_value,

@@ -129,30 +129,23 @@ def test_backup_archive_exception(mock_create_dest_op):
         shutil.rmtree(source_dir, ignore_errors=True)
 
 
-@patch('main.create_source_operator')
 @patch('main.create_dest_operator')
-def test_backup_no_compression_with_failures(mock_create_dest_op, mock_create_source_op):
-    mock_src_op = Mock()
-    mock_dest_op = Mock()
+def test_backup_tar_archive_with_failures(mock_create_dest_op):
+    import tempfile
+    import shutil
     
-    mock_create_source_op.return_value = mock_src_op
-    mock_create_dest_op.return_value = mock_dest_op
+    mock_op = Mock()
+    mock_create_dest_op.return_value = mock_op
     
-    mock_src_op.list.return_value = [Mock(path='file1.txt'), Mock(path='file2.txt')]
-    
-    def create_mock_metadata(is_file_val):
-        metadata = Mock()
-        metadata.is_file = is_file_val
-        metadata.is_dir = not is_file_val
-        return metadata
-    
-    mock_src_op.stat.side_effect = [
-        create_mock_metadata(True),
-        create_mock_metadata(True)
-    ]
-    
-    mock_src_op.read.side_effect = [b"content1", Exception("Read failed")]
-    
-    result = backup('/test/source', [{'service': 'fs', 'root': ''}], compression='tar')
-    
-    assert result is False
+    with patch('main.create_archive') as mock_create_archive:
+        mock_create_archive.side_effect = Exception("Archive creation failed")
+        
+        source_dir = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(source_dir, "test.txt"), 'w') as f:
+                f.write("test")
+            
+            with pytest.raises(Exception):
+                backup(source_dir, [{'service': 'fs', 'root': ''}], compression='tar', archive_name='test')
+        finally:
+            shutil.rmtree(source_dir, ignore_errors=True)

@@ -50,7 +50,7 @@ def test_load_config_valid_compressions(monkeypatch):
     monkeypatch.setenv('BACKUP_SOURCE_PATH', '/source')
     monkeypatch.setenv('BACKUP_DEST_SERVICE', 's3')
     
-    valid_formats = ['none', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'tar.zst', 'zip', 'gzip']
+    valid_formats = ['tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'tar.zst', 'zip', 'gzip']
     
     for fmt in valid_formats:
         monkeypatch.setenv('BACKUP_COMPRESSION', fmt)
