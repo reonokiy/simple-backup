@@ -1,5 +1,7 @@
 # Simple Backup
 
+[![codecov](https://codecov.io/gh/reonokiy/simple-backup/graph/badge.svg?token=2DV0HYPQZQ)](https://codecov.io/gh/reonokiy/simple-backup)
+
 A simple, flexible backup tool that supports multiple storage backends and Kubernetes deployments.
 
 ## Features
