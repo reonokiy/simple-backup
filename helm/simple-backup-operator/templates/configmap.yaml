@@ -1,0 +1,11 @@
+{{- if .Values.storageConfigs }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "simple-backup-operator.fullname" . }}-storage-configs
+  labels:
+    {{- include "simple-backup-operator.labels" . | nindent 4 }}
+data:
+  storage-configs.yaml: |
+    {{- toYaml .Values.storageConfigs | nindent 4 }}
+{{- end }}

@@ -1,0 +1,31 @@
+replicaCount: 1
+
+image:
+  repository: simple-backup-operator
+  pullPolicy: Never
+  tag: "latest"
+
+backupImage:
+  repository: simple-backup
+  tag: latest
+  pullPolicy: Never
+
+storageConfigs:
+  s3-primary:
+    service: s3
+    root: backups/primary/
+    storage:
+      bucket: test-backup-bucket
+      region: us-east-1
+  
+  s3-secondary:
+    service: s3
+    root: backups/secondary/
+    storage:
+      bucket: test-backup-bucket-2
+      region: us-west-2
+  
+  fs-local:
+    service: filesystem
+    root: /backups/local/
+    storage: {}

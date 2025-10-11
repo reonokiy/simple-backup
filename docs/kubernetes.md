@@ -342,6 +342,53 @@ spec:
   schedule: "0 2 * * *"
 ```
 
+### Pausing Workloads During Backup
+
+For data consistency, you can pause Deployments or StatefulSets during backup operations. This is useful for databases or stateful applications that require quiescing before backup.
+
+```yaml
+apiVersion: backup.simple-backup.io/v1alpha1
+kind: BackupJob
+metadata:
+  name: database-backup
+spec:
+  source:
+    path: /var/lib/postgresql/data
+    pvcName: postgres-data
+  
+  destination:
+    service: s3
+    root: backups/postgres
+    secretRef: s3-credentials
+  
+  compression: tar.zst
+  schedule: "0 2 * * *"
+  
+  pauseWorkloads:
+    enabled: true
+    workloads:
+      - kind: StatefulSet
+        name: postgres
+      - kind: Deployment
+        name: pgbouncer
+  
+  retention:
+    daily: 7
+    weekly: 4
+```
+
+**How it works:**
+1. **Init container** scales workloads to 0 replicas and waits for pods to terminate
+2. **Main container** performs the backup
+3. **Sidecar container** restores workloads to original replica count
+
+**Important notes:**
+- Requires the operator's service account to have permissions to scale workloads (already configured in the Helm chart)
+- The backup pod uses `serviceAccountName: simple-backup-operator`
+- Original replica counts are preserved in a shared volume
+- If backup fails, workloads may remain paused - monitor backup jobs carefully
+- Only use for applications that can tolerate downtime during backup window
+
 ---
 
 ## Storage Configuration

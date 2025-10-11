@@ -62,6 +62,13 @@ def load_env_config() -> Dict[str, Any]:
         if key.startswith('BACKUP_'):
             env_key = key[7:].lower()
             
+            if env_key.startswith('storage_'):
+                storage_key = env_key[8:]
+                if 'storage' not in env_config:
+                    env_config['storage'] = {}
+                env_config['storage'][storage_key] = value
+                continue
+            
             mapping = {
                 'source_path': 'source_path',
                 'dest_service': 'dest_service',
@@ -161,78 +168,11 @@ def create_source_operator(source_path: str) -> opendal.Operator:
     return opendal.Operator("fs", root=source_path)
 
 
-def get_service_config(service_type: str, storage_config: Dict[str, Any]) -> Dict[str, Any]:
-    def get_config_value(key: str, env_var: str) -> Optional[str]:
-        return os.getenv(env_var) or storage_config.get(key)
-    
-    service_configs = {
-        's3': {
-            'bucket': get_config_value('bucket', 'S3_BUCKET'),
-            'region': get_config_value('region', 'S3_REGION'),
-            'access_key_id': get_config_value('access_key_id', 'S3_ACCESS_KEY_ID'),
-            'secret_access_key': get_config_value('secret_access_key', 'S3_SECRET_ACCESS_KEY'),
-            'endpoint': get_config_value('endpoint', 'S3_ENDPOINT'),
-        },
-        'azblob': {
-            'container': get_config_value('container', 'AZURE_CONTAINER'),
-            'account_name': get_config_value('account_name', 'AZURE_ACCOUNT_NAME'),
-            'account_key': get_config_value('account_key', 'AZURE_ACCOUNT_KEY'),
-        },
-        'gcs': {
-            'bucket': get_config_value('bucket', 'GCS_BUCKET'),
-            'credential': get_config_value('credential', 'GCS_CREDENTIAL'),
-        },
-        'fs': {
-            'root': get_config_value('root', 'FS_ROOT'),
-        },
-        'oss': {
-            'bucket': get_config_value('bucket', 'OSS_BUCKET'),
-            'endpoint': get_config_value('endpoint', 'OSS_ENDPOINT'),
-            'access_key_id': get_config_value('access_key_id', 'OSS_ACCESS_KEY_ID'),
-            'access_key_secret': get_config_value('access_key_secret', 'OSS_ACCESS_KEY_SECRET'),
-        },
-        'obs': {
-            'bucket': get_config_value('bucket', 'OBS_BUCKET'),
-            'endpoint': get_config_value('endpoint', 'OBS_ENDPOINT'),
-            'access_key_id': get_config_value('access_key_id', 'OBS_ACCESS_KEY_ID'),
-            'secret_access_key': get_config_value('secret_access_key', 'OBS_SECRET_ACCESS_KEY'),
-        },
-        'cos': {
-            'bucket': get_config_value('bucket', 'COS_BUCKET'),
-            'region': get_config_value('region', 'COS_REGION'),
-            'secret_id': get_config_value('secret_id', 'COS_SECRET_ID'),
-            'secret_key': get_config_value('secret_key', 'COS_SECRET_KEY'),
-        },
-        'webdav': {
-            'endpoint': get_config_value('endpoint', 'WEBDAV_ENDPOINT'),
-            'username': get_config_value('username', 'WEBDAV_USERNAME'),
-            'password': get_config_value('password', 'WEBDAV_PASSWORD'),
-        },
-    }
-    
-    if service_type not in service_configs:
-        raise ValueError(f"Unsupported service type: {service_type}")
-    
-    return service_configs[service_type]
-
-
 def create_dest_operator(service_type: str, storage_config: Optional[Dict[str, Any]] = None) -> opendal.Operator:
     if storage_config is None:
         storage_config = {}
     
-    opendal_config: Dict[str, str] = {}
-    
-    for key, value in os.environ.items():
-        if key.startswith('OPENDAL_'):
-            config_key = key[8:].lower()
-            opendal_config[config_key] = value
-    
-    if opendal_config:
-        logger.info(f"Using OPENDAL_* environment variables for {service_type} configuration")
-        return opendal.Operator(service_type, **opendal_config)
-    
-    config = get_service_config(service_type, storage_config)
-    config = {k: v for k, v in config.items() if v is not None}
+    config = {k: v for k, v in storage_config.items() if v is not None}
     
     return opendal.Operator(service_type, **config)
 

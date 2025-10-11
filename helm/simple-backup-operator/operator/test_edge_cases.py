@@ -109,7 +109,7 @@ class TestEdgeCases:
             'metadata': {'name': 'test', 'namespace': 'default', 'uid': 'uid'},
             'spec': {
                 'source': {'path': '/data'},
-                'destination': {'service': 's3', 'root': ''}
+                'destination': {'service': 'fs', 'root': ''}
             }
         }
         
@@ -121,14 +121,14 @@ class TestEdgeCases:
         container = cronjob.spec.job_template.spec.template.spec.containers[0]
         
         env_dict = {e.name: e.value for e in container.env if e.value is not None}
-        assert env_dict['BACKUP_DEST_ROOT'] == ''
+        assert env_dict['BACKUP_STORAGE_ROOT'] == ''
     
     def test_missing_destination_root(self, controller):
         backupjob = {
             'metadata': {'name': 'test', 'namespace': 'default', 'uid': 'uid'},
             'spec': {
                 'source': {'path': '/data'},
-                'destination': {'service': 's3'}
+                'destination': {'service': 'fs'}
             }
         }
         
@@ -140,7 +140,7 @@ class TestEdgeCases:
         container = cronjob.spec.job_template.spec.template.spec.containers[0]
         
         env_dict = {e.name: e.value for e in container.env if e.value is not None}
-        assert env_dict.get('BACKUP_DEST_ROOT', '') == ''
+        assert env_dict.get('FS_ROOT', '') == ''
     
     def test_cronjob_labels_and_selectors(self, controller):
         backupjob = {
@@ -281,7 +281,7 @@ class TestEdgeCases:
             'spec': {
                 'source': {'path': '/data/with spaces/and-special_chars'},
                 'destination': {
-                    'service': 's3',
+                    'service': 'fs',
                     'root': 'backups/path with spaces/'
                 }
             }
@@ -296,7 +296,7 @@ class TestEdgeCases:
         
         env_dict = {e.name: e.value for e in container.env if e.value is not None}
         assert env_dict['BACKUP_SOURCE_PATH'] == '/data/with spaces/and-special_chars'
-        assert env_dict['BACKUP_DEST_ROOT'] == 'backups/path with spaces/'
+        assert env_dict['BACKUP_STORAGE_ROOT'] == 'backups/path with spaces/'
     
     def test_zero_retention_values(self, controller):
         backupjob = {

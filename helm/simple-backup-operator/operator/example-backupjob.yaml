@@ -1,7 +1,53 @@
 apiVersion: simple-backup.nokiy.net/v1alpha1
 kind: BackupJob
 metadata:
-  name: database-backup
+  name: database-backup-with-ref
+  namespace: default
+spec:
+  source:
+    path: /data/postgres
+    pvcName: postgres-data
+  
+  destination:
+    storageConfigRef: s3-primary
+    root: backups/postgres
+    secretRef: s3-credentials
+  
+  compression: tar.zst
+  
+  schedule: "0 2 * * *"
+  
+  retention:
+    daily: 7
+    weekly: 4
+    monthly: 6
+    yearly: 2
+  
+  encryption:
+    enabled: true
+    recipientSecretRef:
+      name: backup-encryption
+      key: recipient
+  
+  resources:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+  
+  pauseWorkloads:
+    enabled: true
+    workloads:
+    - kind: Deployment
+      name: postgres
+
+---
+apiVersion: simple-backup.nokiy.net/v1alpha1
+kind: BackupJob
+metadata:
+  name: database-backup-inline
   namespace: default
 spec:
   source:
@@ -36,3 +82,10 @@ spec:
     requests:
       cpu: "500m"
       memory: "512Mi"
+  
+  pauseWorkloads:
+    enabled: true
+    workloads:
+    - kind: Deployment
+      name: postgres
+

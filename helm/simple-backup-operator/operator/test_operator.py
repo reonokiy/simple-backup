@@ -30,7 +30,10 @@ def sample_backupjob():
             'destination': {
                 'service': 's3',
                 'root': 'backups/',
-                'secretRef': 'aws-credentials'
+                'secretRef': 'aws-credentials',
+                'storage': {
+                    'bucket': 'my-bucket'
+                }
             },
             'retention': {
                 'maxBackups': 10,
@@ -126,6 +129,7 @@ class TestBackupJobController:
         assert env_dict['BACKUP_SOURCE_PATH'] == '/data'
         assert env_dict['BACKUP_DEST_SERVICE'] == 's3'
         assert env_dict['BACKUP_DEST_ROOT'] == 'backups/'
+        assert env_dict['BACKUP_STORAGE_BUCKET'] == 'my-bucket'
         assert env_dict['BACKUP_COMPRESSION'] == 'tar.zst'
         assert env_dict['BACKUP_ARCHIVE_NAME'] == 'myapp'
         assert env_dict['BACKUP_RETENTION_MAX_BACKUPS'] == '10'
@@ -415,3 +419,318 @@ class TestBackupJobController:
                 controller.run()
         
         assert controller.handle_event.call_count == 2
+    
+    def test_create_cronjob_with_pause_workloads_deployment(self, controller):
+        backupjob = {
+            'metadata': {'name': 'test', 'namespace': 'default', 'uid': 'uid'},
+            'spec': {
+                'source': {'path': '/data'},
+                'destination': {'service': 's3'},
+                'pauseWorkloads': {
+                    'enabled': True,
+                    'workloads': [
+                        {'kind': 'Deployment', 'name': 'myapp'}
+                    ]
+                }
+            }
+        }
+        
+        controller.batch_api.create_namespaced_cron_job = Mock()
+        controller.create_cronjob_from_backupjob(backupjob, 'default')
+        
+        call_args = controller.batch_api.create_namespaced_cron_job.call_args
+        cronjob = call_args[1]['body']
+        pod_spec = cronjob.spec.job_template.spec.template.spec
+        
+        assert len(pod_spec.init_containers) == 1
+        assert pod_spec.init_containers[0].name == 'pause-workloads'
+        assert pod_spec.init_containers[0].image == 'bitnami/kubectl:latest'
+        assert 'kubectl scale deployment myapp' in pod_spec.init_containers[0].args[0]
+        assert '/shared/myapp-replicas.txt' in pod_spec.init_containers[0].args[0]
+        
+        assert len(pod_spec.containers) == 2
+        backup_container = next(c for c in pod_spec.containers if c.name == 'backup')
+        resume_container = next(c for c in pod_spec.containers if c.name == 'resume-workloads')
+        
+        assert resume_container.image == 'bitnami/kubectl:latest'
+        assert 'kubectl scale deployment myapp' in resume_container.args[0]
+        assert '/shared/myapp-replicas.txt' in resume_container.args[0]
+        
+        shared_volume = next(v for v in pod_spec.volumes if v.name == 'shared')
+        assert shared_volume.empty_dir is not None
+        
+        assert pod_spec.service_account_name == 'simple-backup-operator'
+    
+    def test_create_cronjob_with_pause_workloads_statefulset(self, controller):
+        backupjob = {
+            'metadata': {'name': 'test', 'namespace': 'default', 'uid': 'uid'},
+            'spec': {
+                'source': {'path': '/data'},
+                'destination': {'service': 's3'},
+                'pauseWorkloads': {
+                    'enabled': True,
+                    'workloads': [
+                        {'kind': 'StatefulSet', 'name': 'database'}
+                    ]
+                }
+            }
+        }
+        
+        controller.batch_api.create_namespaced_cron_job = Mock()
+        controller.create_cronjob_from_backupjob(backupjob, 'default')
+        
+        call_args = controller.batch_api.create_namespaced_cron_job.call_args
+        cronjob = call_args[1]['body']
+        pod_spec = cronjob.spec.job_template.spec.template.spec
+        
+        assert len(pod_spec.init_containers) == 1
+        assert 'kubectl scale statefulset database' in pod_spec.init_containers[0].args[0]
+        assert '/shared/database-replicas.txt' in pod_spec.init_containers[0].args[0]
+        
+        resume_container = next(c for c in pod_spec.containers if c.name == 'resume-workloads')
+        assert 'kubectl scale statefulset database' in resume_container.args[0]
+        assert '/shared/database-replicas.txt' in resume_container.args[0]
+    
+    def test_create_cronjob_with_pause_workloads_disabled(self, controller):
+        backupjob = {
+            'metadata': {'name': 'test', 'namespace': 'default', 'uid': 'uid'},
+            'spec': {
+                'source': {'path': '/data'},
+                'destination': {'service': 's3'},
+                'pauseWorkloads': {
+                    'enabled': False,
+                    'workloads': [
+                        {'kind': 'Deployment', 'name': 'myapp'}
+                    ]
+                }
+            }
+        }
+        
+        controller.batch_api.create_namespaced_cron_job = Mock()
+        controller.create_cronjob_from_backupjob(backupjob, 'default')
+        
+        call_args = controller.batch_api.create_namespaced_cron_job.call_args
+        cronjob = call_args[1]['body']
+        pod_spec = cronjob.spec.job_template.spec.template.spec
+        
+        assert pod_spec.init_containers is None
+        assert len(pod_spec.containers) == 1
+        assert pod_spec.containers[0].name == 'backup'
+        assert pod_spec.service_account_name is None
+        
+        shared_volume = next((v for v in (pod_spec.volumes or []) if v.name == 'shared'), None)
+        assert shared_volume is None
+    
+    def test_create_cronjob_without_pause_workloads(self, controller):
+        backupjob = {
+            'metadata': {'name': 'test', 'namespace': 'default', 'uid': 'uid'},
+            'spec': {
+                'source': {'path': '/data'},
+                'destination': {'service': 's3'}
+            }
+        }
+        
+        controller.batch_api.create_namespaced_cron_job = Mock()
+        controller.create_cronjob_from_backupjob(backupjob, 'default')
+        
+        call_args = controller.batch_api.create_namespaced_cron_job.call_args
+        cronjob = call_args[1]['body']
+        pod_spec = cronjob.spec.job_template.spec.template.spec
+        
+        assert pod_spec.init_containers is None
+        assert len(pod_spec.containers) == 1
+        assert pod_spec.containers[0].name == 'backup'
+        assert pod_spec.service_account_name is None
+    
+    def test_generate_pause_script(self, controller):
+        workloads = [
+            {'kind': 'Deployment', 'name': 'myapp'},
+            {'kind': 'StatefulSet', 'name': 'database'}
+        ]
+        
+        script = controller._generate_pause_script(workloads, 'default')
+        
+        assert 'set -e' in script
+        assert 'kubectl get deployment myapp -n default' in script
+        assert 'kubectl scale deployment myapp -n default --replicas=0' in script
+        assert '/shared/myapp-replicas.txt' in script
+        assert 'kubectl get statefulset database -n default' in script
+        assert 'kubectl scale statefulset database -n default --replicas=0' in script
+        assert '/shared/database-replicas.txt' in script
+        assert 'kubectl wait --for=delete pod' in script
+    
+    def test_generate_resume_script(self, controller):
+        workloads = [
+            {'kind': 'Deployment', 'name': 'myapp'},
+            {'kind': 'StatefulSet', 'name': 'database'}
+        ]
+        
+        script = controller._generate_resume_script(workloads, 'default')
+        
+        assert 'set -e' in script
+        assert 'sleep 5' in script
+        assert 'kubectl scale deployment myapp -n default --replicas=$REPLICAS' in script
+        assert 'cat /shared/myapp-replicas.txt' in script
+        assert 'kubectl scale statefulset database -n default --replicas=$REPLICAS' in script
+        assert 'cat /shared/database-replicas.txt' in script
+    
+    def test_load_storage_configs_success(self, controller):
+        mock_configmap = Mock()
+        mock_configmap.data = {
+            'storage-configs.yaml': '''
+s3-primary:
+  service: s3
+  root: backups/
+  storage:
+    bucket: my-bucket
+    region: us-east-1
+'''
+        }
+        controller.core_api.read_namespaced_config_map = Mock(return_value=mock_configmap)
+        
+        configs = controller._load_storage_configs('default')
+        
+        assert 's3-primary' in configs
+        assert configs['s3-primary']['service'] == 's3'
+        assert configs['s3-primary']['root'] == 'backups/'
+        assert configs['s3-primary']['storage']['bucket'] == 'my-bucket'
+    
+    def test_load_storage_configs_not_found(self, controller):
+        controller.core_api.read_namespaced_config_map = Mock(
+            side_effect=ApiException(status=404)
+        )
+        
+        configs = controller._load_storage_configs('default')
+        
+        assert configs == {}
+    
+    def test_load_storage_configs_empty(self, controller):
+        mock_configmap = Mock()
+        mock_configmap.data = {}
+        controller.core_api.read_namespaced_config_map = Mock(return_value=mock_configmap)
+        
+        configs = controller._load_storage_configs('default')
+        
+        assert configs == {}
+    
+    def test_resolve_destination_with_storage_config_ref(self, controller):
+        mock_configmap = Mock()
+        mock_configmap.data = {
+            'storage-configs.yaml': '''
+s3-primary:
+  service: s3
+  root: backups/
+  storage:
+    bucket: my-bucket
+    region: us-east-1
+'''
+        }
+        controller.core_api.read_namespaced_config_map = Mock(return_value=mock_configmap)
+        
+        destination = {
+            'storageConfigRef': 's3-primary',
+            'root': 'custom/path',
+            'secretRef': 's3-credentials'
+        }
+        
+        resolved = controller._resolve_destination(destination, 'default')
+        
+        assert resolved['service'] == 's3'
+        assert resolved['root'] == 'custom/path'
+        assert resolved['storage']['bucket'] == 'my-bucket'
+        assert resolved['storage']['region'] == 'us-east-1'
+        assert resolved['secretRef'] == 's3-credentials'
+    
+    def test_resolve_destination_with_storage_config_ref_default_root(self, controller):
+        mock_configmap = Mock()
+        mock_configmap.data = {
+            'storage-configs.yaml': '''
+s3-primary:
+  service: s3
+  root: backups/
+  storage:
+    bucket: my-bucket
+'''
+        }
+        controller.core_api.read_namespaced_config_map = Mock(return_value=mock_configmap)
+        
+        destination = {
+            'storageConfigRef': 's3-primary'
+        }
+        
+        resolved = controller._resolve_destination(destination, 'default')
+        
+        assert resolved['service'] == 's3'
+        assert resolved['root'] == 'backups/'
+        assert resolved['storage']['bucket'] == 'my-bucket'
+    
+    def test_resolve_destination_with_storage_config_ref_not_found(self, controller):
+        mock_configmap = Mock()
+        mock_configmap.data = {
+            'storage-configs.yaml': '''
+s3-primary:
+  service: s3
+'''
+        }
+        controller.core_api.read_namespaced_config_map = Mock(return_value=mock_configmap)
+        
+        destination = {
+            'storageConfigRef': 'nonexistent'
+        }
+        
+        with pytest.raises(ValueError, match="Storage config 'nonexistent' not found"):
+            controller._resolve_destination(destination, 'default')
+    
+    def test_resolve_destination_without_storage_config_ref(self, controller):
+        destination = {
+            'service': 's3',
+            'root': 'backups/',
+            'storage': {
+                'bucket': 'my-bucket'
+            },
+            'secretRef': 's3-credentials'
+        }
+        
+        resolved = controller._resolve_destination(destination, 'default')
+        
+        assert resolved == destination
+    
+    def test_create_cronjob_with_storage_config_ref(self, controller):
+        mock_configmap = Mock()
+        mock_configmap.data = {
+            'storage-configs.yaml': '''
+s3-primary:
+  service: s3
+  root: backups/
+  storage:
+    bucket: my-bucket
+    region: us-east-1
+'''
+        }
+        controller.core_api.read_namespaced_config_map = Mock(return_value=mock_configmap)
+        controller.batch_api.create_namespaced_cron_job = Mock()
+        
+        backupjob = {
+            'metadata': {'name': 'test', 'namespace': 'default', 'uid': 'uid'},
+            'spec': {
+                'source': {'path': '/data'},
+                'destination': {
+                    'storageConfigRef': 's3-primary',
+                    'secretRef': 's3-credentials'
+                }
+            }
+        }
+        
+        controller.create_cronjob_from_backupjob(backupjob, 'default')
+        
+        call_args = controller.batch_api.create_namespaced_cron_job.call_args
+        cronjob = call_args[1]['body']
+        container = cronjob.spec.job_template.spec.template.spec.containers[0]
+        
+        env_dict = {e.name: e.value for e in container.env if e.value is not None}
+        
+        assert env_dict['BACKUP_DEST_SERVICE'] == 's3'
+        assert env_dict['BACKUP_STORAGE_BUCKET'] == 'my-bucket'
+        assert env_dict['BACKUP_STORAGE_REGION'] == 'us-east-1'
+        assert container.env_from[0].secret_ref.name == 's3-credentials'
+

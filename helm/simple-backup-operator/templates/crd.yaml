@@ -39,12 +39,13 @@ spec:
                     description: PVC to mount for backup source
               destination:
                 type: object
-                required:
-                - service
                 properties:
+                  storageConfigRef:
+                    type: string
+                    description: Reference to storage config in ConfigMap (mutually exclusive with service)
                   service:
                     type: string
-                    enum: [s3, azblob, gcs, oss, obs, cos, webdav, fs]
+                    enum: [s3, azblob, gcs, oss, obs, cos, webdav, fs, filesystem]
                     description: Storage service type
                   root:
                     type: string
@@ -52,6 +53,17 @@ spec:
                   secretRef:
                     type: string
                     description: Reference to secret containing credentials
+                  storage:
+                    type: object
+                    description: Storage-specific configuration (key-value pairs)
+                    x-kubernetes-preserve-unknown-fields: true
+                    additionalProperties:
+                      type: string
+                oneOf:
+                - required:
+                  - storageConfigRef
+                - required:
+                  - service
               compression:
                 type: string
                 enum: [tar, tar.gz, tar.bz2, tar.xz, tar.zst, zip, gzip]
@@ -127,6 +139,29 @@ spec:
                 type: boolean
                 default: false
                 description: Suspend the backup job
+              pauseWorkloads:
+                type: object
+                description: Workloads to pause during backup
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                    description: Enable pausing workloads
+                  workloads:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - kind
+                      - name
+                      properties:
+                        kind:
+                          type: string
+                          enum: [Deployment, StatefulSet]
+                          description: Workload kind
+                        name:
+                          type: string
+                          description: Workload name
           status:
             type: object
             properties:

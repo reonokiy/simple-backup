@@ -28,7 +28,7 @@ class TestBackupJobIntegration:
                 },
                 'destination': {
                     'service': 's3',
-                    'root': 'backups/postgresql/',
+                    'bucket': 'backups/postgresql/',
                     'secretRef': 'aws-s3-credentials'
                 },
                 'retention': {
@@ -65,7 +65,7 @@ class TestBackupJobIntegration:
         env_dict = {e.name: e.value for e in container.env if e.value}
         assert env_dict['BACKUP_SOURCE_PATH'] == '/var/lib/postgresql/data'
         assert env_dict['BACKUP_DEST_SERVICE'] == 's3'
-        assert env_dict['BACKUP_DEST_ROOT'] == 'backups/postgresql/'
+        assert env_dict['BACKUP_STORAGE_BUCKET'] == 'backups/postgresql/'
         assert env_dict['BACKUP_ENCRYPTION_ENABLED'] == 'true'
         
         assert container.env_from[0].secret_ref.name == 'aws-s3-credentials'

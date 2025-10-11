@@ -12,28 +12,31 @@ def test_create_source_operator(temp_dir):
 
 
 def test_create_dest_operator_fs(monkeypatch, temp_dir):
-    monkeypatch.setenv('FS_ROOT', temp_dir)
+    storage_config = {'root': temp_dir}
     
-    op = create_dest_operator('fs')
+    op = create_dest_operator('fs', storage_config)
     
     assert op is not None
 
 
 def test_create_dest_operator_s3(monkeypatch):
-    monkeypatch.setenv('S3_BUCKET', 'my-bucket')
-    monkeypatch.setenv('S3_REGION', 'us-east-1')
-    monkeypatch.setenv('S3_ACCESS_KEY_ID', 'test-key')
-    monkeypatch.setenv('S3_SECRET_ACCESS_KEY', 'test-secret')
+    storage_config = {
+        'bucket': 'my-bucket',
+        'region': 'us-east-1',
+        'access_key_id': 'test-key',
+        'secret_access_key': 'test-secret'
+    }
     
-    op = create_dest_operator('s3')
+    op = create_dest_operator('s3', storage_config)
     
     assert op is not None
 
 
 def test_create_dest_operator_unsupported():
     import pytest
+    import opendal
     
-    with pytest.raises(ValueError, match="Unsupported service type"):
+    with pytest.raises(opendal.exceptions.Unsupported):
         create_dest_operator('unsupported_service')
 
 

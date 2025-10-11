@@ -49,6 +49,14 @@ spec:
           value: "simple-backup-operator"
         - name: LOG_LEVEL
           value: {{ .Values.operator.logLevel | quote }}
+        - name: SERVICE_ACCOUNT_NAME
+          value: {{ include "simple-backup-operator.serviceAccountName" . }}
+        - name: BACKUP_IMAGE
+          value: "{{ .Values.backupImage.repository }}:{{ .Values.backupImage.tag }}"
+        - name: BACKUP_IMAGE_PULL_POLICY
+          value: {{ .Values.backupImage.pullPolicy }}
+        - name: STORAGE_CONFIG_MAP
+          value: {{ include "simple-backup-operator.fullname" . }}-storage-configs
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
       {{- with .Values.nodeSelector }}

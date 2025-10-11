@@ -1,15 +1,12 @@
 # Configuration
 
-Simple Backup supports two configuration methods:
+Simple Backup supports configuration through:
 1. **Configuration files** (TOML or YAML)
-2. **OPENDAL environment variables** (for storage configuration)
+2. **Environment variables** (for overriding credentials)
 
 ## Configuration Priority
 
-When multiple configuration methods are used, they are applied in this order (highest to lowest priority):
-1. `OPENDAL_*` environment variables
-2. Service-specific environment variables (`S3_*`, `AZURE_*`, etc.) in storage config
-3. Configuration file values
+Storage configuration is read from the `storage` dictionary in each destination. Environment variables are **not** automatically used - they must be explicitly referenced in the configuration file or passed through the Kubernetes operator.
 
 ## Configuration Files
 
@@ -29,6 +26,46 @@ cp config.example.yaml config.yaml
 ```
 
 ### Multiple Destinations Configuration
+
+You can backup to multiple storage locations simultaneously:
+
+```yaml
+# config.yaml
+source_path: /path/to/backup
+compression: tar.zst
+
+retention:
+  daily: 7
+  weekly: 4
+  monthly: 6
+
+destinations:
+  - service: s3
+    root: backups/
+    storage:
+      bucket: my-primary-bucket
+      region: us-east-1
+      access_key_id: AKIAxxxxx
+      secret_access_key: xxxxx
+  
+  - service: s3
+    root: backups/
+    storage:
+      bucket: my-secondary-bucket
+      region: us-west-2
+      access_key_id: AKIAyyyyy
+      secret_access_key: yyyyy
+  
+  - service: azblob
+    root: backups/
+    storage:
+      container: my-backups
+      account_name: myaccount
+      account_key: xxxxx
+```
+
+Or in TOML:
+
 ```toml
 # config.toml
 source_path = "/path/to/backup"
@@ -60,135 +97,124 @@ access_key_id = "AKIAyyyyy"
 secret_access_key = "yyyyy"
 ```
 
-Or in YAML:
+**Features**:
+- Backup to multiple storage backends simultaneously
+- Each destination has one storage configuration
+- Each destination can use different credentials
+- Retention policies apply to each destination independently
+- Archive is created once and uploaded to all destinations (efficient)
+- **Startup validation**: Connectivity to all storage backends is tested before backup runs
+
+**Note**: Credentials should be stored in the `storage` section of each destination.
+
+## Storage Service Configuration
+
+Configure storage credentials directly in the `storage` section of each destination:
+
+### Amazon S3
 
 ```yaml
-# config.yaml
-source_path: /path/to/backup
-compression: tar.zst
-
-retention:
-  daily: 7
-  weekly: 4
-  monthly: 6
-
 destinations:
   - service: s3
     root: backups/
     storage:
-      bucket: my-primary-bucket
+      bucket: my-bucket
       region: us-east-1
-      access_key_id: AKIAxxxxx
-      secret_access_key: xxxxx
-  
-  - service: azblob
-    root: backups/
-    storage:
-      container: my-backups
-      account_name: myaccount
-      account_key: xxxxx
-```
-
-**Features**:
-- Backup to multiple destinations simultaneously
-- Each destination can use different storage services
-- Independent storage configurations per destination
-- Retention policies apply per destination
-- Archive is created once and uploaded to all destinations (efficient)
-- **Startup validation**: Connectivity to all destinations is tested before backup runs
-
-**Note**: Sensitive credentials in config files can be overridden by environment variables for better security.
-
-## Storage Service Environment Variables
-
-When configuring storage in your `destinations` array, you can use environment variables for credentials. These variables are used when they're referenced in the storage config.
-
-### Amazon S3
-
-```bash
-export S3_BUCKET=my-bucket
-export S3_REGION=us-east-1
-export S3_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-export S3_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-export S3_ENDPOINT=https://s3.amazonaws.com  # Optional
+      access_key_id: AKIAIOSFODNN7EXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+      endpoint: https://s3.amazonaws.com  # Optional
 ```
 
 ### Azure Blob Storage
 
-```bash
-export AZURE_CONTAINER=my-container
-export AZURE_ACCOUNT_NAME=myaccount
-export AZURE_ACCOUNT_KEY=your-account-key
+```yaml
+destinations:
+  - service: azblob
+    root: backups/
+    storage:
+      container: my-container
+      account_name: myaccount
+      account_key: your-account-key
 ```
 
 ### Google Cloud Storage
 
-```bash
-export GCS_BUCKET=my-bucket
-export GCS_CREDENTIAL=/path/to/service-account.json
+```yaml
+destinations:
+  - service: gcs
+    root: backups/
+    storage:
+      bucket: my-bucket
+      credential: /path/to/service-account.json
 ```
 
 ### Alibaba Cloud OSS
 
-```bash
-export OSS_BUCKET=my-bucket
-export OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
-export OSS_ACCESS_KEY_ID=your-access-key
-export OSS_ACCESS_KEY_SECRET=your-secret
+```yaml
+destinations:
+  - service: oss
+    root: backups/
+    storage:
+      bucket: my-bucket
+      endpoint: https://oss-cn-hangzhou.aliyuncs.com
+      access_key_id: your-access-key
+      access_key_secret: your-secret
 ```
 
 ### Huawei Cloud OBS
 
-```bash
-export OBS_BUCKET=my-bucket
-export OBS_ENDPOINT=https://obs.region.myhuaweicloud.com
-export OBS_ACCESS_KEY_ID=your-access-key
-export OBS_SECRET_ACCESS_KEY=your-secret-key
+```yaml
+destinations:
+  - service: obs
+    root: backups/
+    storage:
+      bucket: my-bucket
+      endpoint: https://obs.region.myhuaweicloud.com
+      access_key_id: your-access-key
+      secret_access_key: your-secret-key
 ```
 
 ### Tencent Cloud COS
 
-```bash
-export COS_BUCKET=my-bucket
-export COS_REGION=ap-guangzhou
-export COS_SECRET_ID=your-secret-id
-export COS_SECRET_KEY=your-secret-key
+```yaml
+destinations:
+  - service: cos
+    root: backups/
+    storage:
+      bucket: my-bucket
+      region: ap-guangzhou
+      secret_id: your-secret-id
+      secret_key: your-secret-key
 ```
 
 ### WebDAV
 
-```bash
-export WEBDAV_ENDPOINT=https://webdav.example.com
-export WEBDAV_USERNAME=your-username
-export WEBDAV_PASSWORD=your-password
+```yaml
+destinations:
+  - service: webdav
+    root: backups/
+    storage:
+      endpoint: https://webdav.example.com
+      username: your-username
+      password: your-password
 ```
 
 ### Local Filesystem
 
-```bash
-export FS_ROOT=/path/to/backup/destination
+```yaml
+destinations:
+  - service: fs
+    root: /path/to/backup/destination
+    storage:
+      root: /path/to/backup/destination
 ```
-
-## OPENDAL Environment Variables
-
-You can use [OpenDAL's environment variables](https://opendal.apache.org/docs/) as an alternative to service-specific variables. These take the highest precedence:
-
-```bash
-# Example for S3 using OPENDAL variables
-export OPENDAL_S3_BUCKET=my-bucket
-export OPENDAL_S3_REGION=us-east-1
-export OPENDAL_S3_ACCESS_KEY_ID=AKIAxxxxx
-export OPENDAL_S3_SECRET_ACCESS_KEY=xxxxx
-```
-
-This is especially useful in containerized environments where you want to use standard OpenDAL variable names.
 
 
 
 ## Best Practices
 
-1. **Configuration Method**: Use config files for base configuration, environment variables for secrets and environment-specific overrides.
-2. **Security**: Never commit credentials to version control. Use environment variables or secret management tools.
+1. **Configuration Method**: Use config files for base configuration and structure.
+2. **Security**: Never commit credentials to version control. Use Kubernetes Secrets or other secret management tools to inject credentials into the `storage` section.
 3. **Naming**: Use descriptive `archive_name` values to easily identify backups.
 4. **Destination Root**: Use the `root` field in each destination to organize backups by date or purpose (e.g., `backups/2025/01/`).
 5. **Compression**: Choose compression based on your needs (see [Compression Guide](compression.md)).
@@ -196,10 +222,10 @@ This is especially useful in containerized environments where you want to use st
 
 ## Example Configurations
 
-### Using Config File with Environment Variable Overrides
+### Basic Configuration with Credentials
 
 ```toml
-# config.toml - base configuration
+# config.toml
 source_path = "/data"
 compression = "tar.zst"
 
@@ -210,73 +236,34 @@ root = "backups/"
 [destinations.storage]
 bucket = "my-backup-bucket"
 region = "us-east-1"
+access_key_id = "AKIAxxxxx"
+secret_access_key = "xxxxx"
 ```
 
-```bash
-# Override credentials via environment variables
-export S3_ACCESS_KEY_ID=AKIAxxxxx
-export S3_SECRET_ACCESS_KEY=xxxxx
-python main.py
-```
+### Using Kubernetes Secrets
 
-### Using OPENDAL Variables in Kubernetes
+When using the Kubernetes operator, credentials are automatically injected from the BackupJob CR:
 
 ```yaml
-apiVersion: v1
-kind: ConfigMap
+apiVersion: backup.reonokiy.com/v1
+kind: BackupJob
 metadata:
-  name: backup-config
-data:
-  config.yaml: |
-    source_path: /data
-    compression: tar.zst
-    destinations:
-      - service: s3
-        root: backups/
-        storage:
-          bucket: my-backup-bucket
-          region: us-east-1
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: s3-credentials
-type: Opaque
-stringData:
-  access_key_id: AKIAxxxxx
-  secret_access_key: xxxxx
----
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: backup-job
+  name: my-backup
 spec:
+  source:
+    pvcName: my-data
+    subPath: /data
+  
+  destination:
+    service: s3
+    bucket: my-backup-bucket
+    region: us-east-1
+    accessKeyId: AKIAIOSFODNN7EXAMPLE
+    secretAccessKey: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+  
   schedule: "0 2 * * *"
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: backup
-            image: ghcr.io/reonokiy/simple-backup:latest
-            volumeMounts:
-              - name: config
-                mountPath: /app/config.yaml
-                subPath: config.yaml
-            env:
-              - name: S3_ACCESS_KEY_ID
-                valueFrom:
-                  secretKeyRef:
-                    name: s3-credentials
-                    key: access_key_id
-              - name: S3_SECRET_ACCESS_KEY
-                valueFrom:
-                  secretKeyRef:
-                    name: s3-credentials
-                    key: secret_access_key
-          volumes:
-            - name: config
-              configMap:
-                name: backup-config
-          restartPolicy: OnFailure
+  compression: tar.zst
 ```
+
+The operator automatically converts these fields to the appropriate storage configuration for the backup container.
+

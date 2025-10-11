@@ -27,21 +27,22 @@ destinations:
   - service: s3
     root: backups/
     storage:
-      bucket: my-primary-bucket
+      bucket: my-backup-bucket
       region: us-east-1
       access_key_id: AKIAxxxxx
       secret_access_key: xxxxx
-  
-  - service: s3
-    root: backups/
-    storage:
-      bucket: my-secondary-bucket
-      region: us-west-2
-      access_key_id: AKIAyyyyy
-      secret_access_key: yyyyy
-      endpoint: https://s3-compatible.example.com
 
 # Additional destination examples (commented out):
+
+# S3-compatible storage with custom endpoint:
+#   - service: s3
+#     root: backups/
+#     storage:
+#       bucket: my-bucket
+#       region: us-west-2
+#       access_key_id: AKIAxxxxx
+#       secret_access_key: xxxxx
+#       endpoint: https://s3-compatible.example.com
 
 # Azure Blob Storage:
 #   - service: azblob

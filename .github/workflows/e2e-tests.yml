@@ -1,0 +1,397 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  operator-unit-tests:
+    name: Operator Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.14
+        run: uv python install 3.14
+
+      - name: Install operator dependencies
+        working-directory: helm/simple-backup-operator/operator
+        run: uv sync
+
+      - name: Run operator unit tests
+        working-directory: helm/simple-backup-operator/operator
+        run: uv run pytest -v
+
+  e2e-tests:
+    name: E2E Tests with Kind
+    runs-on: ubuntu-latest
+    needs: operator-unit-tests
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.14
+        run: uv python install 3.14
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: simple-backup-e2e
+          wait: 120s
+
+      - name: Build simple-backup image
+        run: |
+          docker buildx build \
+            --tag simple-backup:e2e \
+            --load \
+            -f Dockerfile \
+            .
+
+      - name: Build simple-backup-operator image
+        run: |
+          docker buildx build \
+            --tag simple-backup-operator:e2e \
+            --load \
+            -f helm/simple-backup-operator/operator/Dockerfile \
+            helm/simple-backup-operator/operator/
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image simple-backup:e2e --name simple-backup-e2e
+          kind load docker-image simple-backup-operator:e2e --name simple-backup-e2e
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Install operator with Helm
+        run: |
+          helm install simple-backup-operator \
+            ./helm/simple-backup-operator \
+            --set operator.image.repository=simple-backup-operator \
+            --set operator.image.tag=e2e \
+            --set operator.image.pullPolicy=Never \
+            --set backupImage.repository=simple-backup \
+            --set backupImage.tag=e2e \
+            --set backupImage.pullPolicy=Never \
+            --wait \
+            --timeout 2m
+
+      - name: Wait for operator to be ready
+        run: |
+          kubectl wait --for=condition=ready pod \
+            -l app.kubernetes.io/name=simple-backup-operator-charts \
+            --timeout=120s
+
+      - name: Create WebDAV server
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: webdav-users
+          data:
+            user.passwd: "testuser:{SHA}qUqP5cyxm6YcTAhz05Hph5gvu9M="
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: webdav-server
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: webdav
+            template:
+              metadata:
+                labels:
+                  app: webdav
+              spec:
+                containers:
+                - name: webdav
+                  image: bytemark/webdav:latest
+                  ports:
+                  - containerPort: 80
+                  env:
+                  - name: AUTH_TYPE
+                    value: Basic
+                  - name: USERNAME
+                    value: testuser
+                  - name: PASSWORD
+                    value: testpass
+                  volumeMounts:
+                  - name: webdav-data
+                    mountPath: /var/lib/dav
+                volumes:
+                - name: webdav-data
+                  emptyDir: {}
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: webdav-server
+          spec:
+            selector:
+              app: webdav
+            ports:
+            - port: 80
+              targetPort: 80
+          EOF
+          
+          kubectl wait --for=condition=available deployment/webdav-server --timeout=120s
+
+      - name: Create test deployment
+        run: |
+          kubectl create deployment test-app \
+            --image=busybox:latest \
+            --replicas=2 \
+            -- /bin/sh -c 'mkdir -p /data && echo "Test data at $(date)" > /data/test.txt && sleep 3600'
+          
+          kubectl wait --for=condition=available deployment/test-app --timeout=120s
+
+      - name: Create test PVC
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: test-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+          EOF
+          
+          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/test-data --timeout=60s
+
+      - name: Patch test deployment to use PVC
+        run: |
+          kubectl patch deployment test-app --type='json' -p='[
+            {
+              "op": "add",
+              "path": "/spec/template/spec/volumes",
+              "value": [{"name": "data", "persistentVolumeClaim": {"claimName": "test-data"}}]
+            },
+            {
+              "op": "add",
+              "path": "/spec/template/spec/containers/0/volumeMounts",
+              "value": [{"name": "data", "mountPath": "/data"}]
+            }
+          ]'
+          
+          kubectl rollout status deployment/test-app --timeout=120s
+
+      - name: Create BackupJob CRs
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: simple-backup.nokiy.net/v1alpha1
+          kind: BackupJob
+          metadata:
+            name: test-backup-fs
+          spec:
+            schedule: "*/5 * * * *"
+            source:
+              pvcName: test-data
+              path: /data
+            destination:
+              service: fs
+              root: /tmp/backups
+            compression: tar.zst
+            retention:
+              daily: 7
+              weekly: 4
+              monthly: 6
+            pauseWorkloads:
+              enabled: true
+              workloads:
+                - kind: Deployment
+                  name: test-app
+          ---
+          apiVersion: simple-backup.nokiy.net/v1alpha1
+          kind: BackupJob
+          metadata:
+            name: test-backup-webdav
+          spec:
+            schedule: "*/5 * * * *"
+            source:
+              pvcName: test-data
+              path: /data
+            destination:
+              service: webdav
+              root: /backups
+              storage:
+                endpoint: http://webdav-server
+                username: testuser
+                password: testpass
+            compression: tar.gz
+            retention:
+              daily: 3
+            pauseWorkloads:
+              enabled: false
+          EOF
+
+      - name: Wait for CronJobs creation
+        run: |
+          timeout 30 bash -c 'until kubectl get cronjob test-backup-fs-cronjob; do sleep 2; done'
+          timeout 30 bash -c 'until kubectl get cronjob test-backup-webdav-cronjob; do sleep 2; done'
+
+      - name: Verify CronJob configurations
+        run: |
+          echo "=== FS CronJob ==="
+          kubectl get cronjob test-backup-fs-cronjob -o yaml
+          
+          echo "Checking FS_ROOT environment variable..."
+          kubectl get cronjob test-backup-fs-cronjob -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].env[?(@.name=="FS_ROOT")].value}' | grep -q '/tmp/backups'
+          
+          echo "=== WebDAV CronJob ==="
+          kubectl get cronjob test-backup-webdav-cronjob -o yaml
+          
+          echo "Checking WEBDAV_ENDPOINT environment variable..."
+          kubectl get cronjob test-backup-webdav-cronjob -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].env[?(@.name=="WEBDAV_ENDPOINT")].value}' | grep -q 'http://webdav-server'
+          
+          echo "Checking WEBDAV_USERNAME environment variable..."
+          kubectl get cronjob test-backup-webdav-cronjob -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].env[?(@.name=="WEBDAV_USERNAME")].value}' | grep -q 'testuser'
+
+      - name: Trigger manual backup jobs
+        run: |
+          kubectl create job --from=cronjob/test-backup-fs-cronjob e2e-backup-fs-test
+          kubectl create job --from=cronjob/test-backup-webdav-cronjob e2e-backup-webdav-test
+
+      - name: Wait for backup jobs to complete
+        run: |
+          kubectl wait --for=condition=complete job/e2e-backup-fs-test --timeout=180s
+          kubectl wait --for=condition=complete job/e2e-backup-webdav-test --timeout=180s
+
+      - name: Check backup logs
+        run: |
+          echo "=== FS Backup Logs ==="
+          POD_FS=$(kubectl get pods -l job-name=e2e-backup-fs-test -o jsonpath='{.items[0].metadata.name}')
+          
+          echo "=== Pause Logs ==="
+          kubectl logs $POD_FS -c pause-workloads
+          
+          echo "=== Backup Logs ==="
+          kubectl logs $POD_FS -c backup
+          
+          echo "=== Resume Logs ==="
+          kubectl logs $POD_FS -c resume-workloads
+          
+          echo ""
+          echo "=== WebDAV Backup Logs ==="
+          POD_WEBDAV=$(kubectl get pods -l job-name=e2e-backup-webdav-test -o jsonpath='{.items[0].metadata.name}')
+          
+          echo "=== Backup Logs ==="
+          kubectl logs $POD_WEBDAV -c backup
+
+      - name: Verify pause/resume functionality
+        run: |
+          POD_FS=$(kubectl get pods -l job-name=e2e-backup-fs-test -o jsonpath='{.items[0].metadata.name}')
+          
+          echo "Checking pause logs..."
+          kubectl logs $POD_FS -c pause-workloads | grep -q "deployment/test-app paused"
+          
+          echo "Checking resume logs..."
+          kubectl logs $POD_FS -c resume-workloads | grep -q "deployment/test-app resumed with 2 replicas"
+
+      - name: Verify backups succeeded
+        run: |
+          echo "Verifying FS backup..."
+          POD_FS=$(kubectl get pods -l job-name=e2e-backup-fs-test -o jsonpath='{.items[0].metadata.name}')
+          kubectl logs $POD_FS -c backup | grep -q "Backup completed: 1/1 destinations succeeded"
+          
+          echo "Verifying WebDAV backup..."
+          POD_WEBDAV=$(kubectl get pods -l job-name=e2e-backup-webdav-test -o jsonpath='{.items[0].metadata.name}')
+          kubectl logs $POD_WEBDAV -c backup | grep -q "Backup completed: 1/1 destinations succeeded"
+
+      - name: Verify deployment restored
+        run: |
+          REPLICAS=$(kubectl get deployment test-app -o jsonpath='{.spec.replicas}')
+          if [ "$REPLICAS" != "2" ]; then
+            echo "ERROR: Expected 2 replicas, got $REPLICAS"
+            exit 1
+          fi
+          
+          kubectl wait --for=condition=available deployment/test-app --timeout=60s
+
+      - name: Verify WebDAV server has backup files
+        run: |
+          echo "Checking WebDAV server for backup files..."
+          POD_WEBDAV_SERVER=$(kubectl get pods -l app=webdav -o jsonpath='{.items[0].metadata.name}')
+          kubectl exec $POD_WEBDAV_SERVER -- ls -lah /var/lib/dav/data/backups/
+          
+          echo "Verifying backup files exist..."
+          kubectl exec $POD_WEBDAV_SERVER -- sh -c 'test -n "$(ls -A /var/lib/dav/data/backups/)"'
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Operator Logs ==="
+          kubectl logs -l app.kubernetes.io/name=simple-backup-operator-charts --tail=100
+          
+          echo "=== BackupJob Status ==="
+          kubectl get backupjob test-backup-fs -o yaml
+          kubectl get backupjob test-backup-webdav -o yaml
+          
+          echo "=== CronJob Status ==="
+          kubectl get cronjob test-backup-fs-cronjob -o yaml || true
+          kubectl get cronjob test-backup-webdav-cronjob -o yaml || true
+          
+          echo "=== Job Status ==="
+          kubectl get job e2e-backup-fs-test -o yaml || true
+          kubectl get job e2e-backup-webdav-test -o yaml || true
+          
+          echo "=== Pod Status ==="
+          kubectl get pods
+          
+          echo "=== WebDAV Server Logs ==="
+          kubectl logs -l app=webdav --tail=50 || true
+          
+          echo "=== Events ==="
+          kubectl get events --sort-by='.lastTimestamp'
+
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "## E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if kubectl get job e2e-backup-fs-test -o jsonpath='{.status.succeeded}' | grep -q "1"; then
+            echo "✅ FS backup job completed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ FS backup job failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if kubectl get job e2e-backup-webdav-test -o jsonpath='{.status.succeeded}' | grep -q "1"; then
+            echo "✅ WebDAV backup job completed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ WebDAV backup job failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          REPLICAS=$(kubectl get deployment test-app -o jsonpath='{.spec.replicas}')
+          if [ "$REPLICAS" = "2" ]; then
+            echo "✅ Deployment replicas restored to 2" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Deployment replicas: $REPLICAS (expected 2)" >> $GITHUB_STEP_SUMMARY
+          fi

@@ -39,3 +39,42 @@ watchNamespace: ""
 
 operator:
   logLevel: INFO
+
+backupImage:
+  repository: simple-backup
+  tag: latest
+  pullPolicy: IfNotPresent
+
+storageConfigs: {}
+  # s3-primary:
+  #   service: s3
+  #   root: backups/
+  #   storage:
+  #     bucket: my-backup-bucket
+  #     region: us-east-1
+  #     access_key_id: AKIAxxxxx
+  #     secret_access_key: xxxxx
+  # 
+  # s3-secondary:
+  #   service: s3
+  #   root: backups/
+  #   storage:
+  #     bucket: my-secondary-bucket
+  #     region: us-west-2
+  #     access_key_id: AKIAyyyyy
+  #     secret_access_key: yyyyy
+  # 
+  # azure-blob:
+  #   service: azblob
+  #   root: backups/
+  #   storage:
+  #     container: my-backups
+  #     account_name: myaccount
+  #     account_key: xxxxx
+  # 
+  # gcs-backup:
+  #   service: gcs
+  #   root: backups/
+  #   storage:
+  #     bucket: my-gcs-bucket
+  #     credential_path: /secrets/gcs/key.json

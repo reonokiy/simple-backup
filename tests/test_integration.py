@@ -7,11 +7,9 @@ from main import backup
 
 
 def test_integration_backup_tar_to_fs(mock_source_dir, mock_dest_dir, monkeypatch):
-    monkeypatch.setenv('FS_ROOT', mock_dest_dir)
-    
     success = backup(
         source_path=mock_source_dir,
-        destinations=[{'service': 'fs', 'root': ''}],
+        destinations=[{'service': 'fs', 'root': '', 'storage': {'root': mock_dest_dir}}],
         compression='tar',
         archive_name='test_backup'
     )
@@ -27,11 +25,9 @@ def test_integration_backup_tar_to_fs(mock_source_dir, mock_dest_dir, monkeypatc
 
 
 def test_integration_backup_tar_gz_to_fs(mock_source_dir, mock_dest_dir, monkeypatch):
-    monkeypatch.setenv('FS_ROOT', mock_dest_dir)
-    
     success = backup(
         source_path=mock_source_dir,
-        destinations=[{'service': 'fs', 'root': ''}],
+        destinations=[{'service': 'fs', 'root': '', 'storage': {'root': mock_dest_dir}}],
         compression='tar.gz',
         archive_name='test_backup'
     )
@@ -43,11 +39,9 @@ def test_integration_backup_tar_gz_to_fs(mock_source_dir, mock_dest_dir, monkeyp
 
 
 def test_integration_backup_tar_zst_to_fs(mock_source_dir, mock_dest_dir, monkeypatch):
-    monkeypatch.setenv('FS_ROOT', mock_dest_dir)
-    
     success = backup(
         source_path=mock_source_dir,
-        destinations=[{'service': 'fs', 'root': ''}],
+        destinations=[{'service': 'fs', 'root': '', 'storage': {'root': mock_dest_dir}}],
         compression='tar.zst',
         archive_name='test_backup'
     )
@@ -59,11 +53,9 @@ def test_integration_backup_tar_zst_to_fs(mock_source_dir, mock_dest_dir, monkey
 
 
 def test_integration_backup_zip_to_fs(mock_source_dir, mock_dest_dir, monkeypatch):
-    monkeypatch.setenv('FS_ROOT', mock_dest_dir)
-    
     success = backup(
         source_path=mock_source_dir,
-        destinations=[{'service': 'fs', 'root': ''}],
+        destinations=[{'service': 'fs', 'root': '', 'storage': {'root': mock_dest_dir}}],
         compression='zip',
         archive_name='test_backup'
     )
@@ -75,14 +67,12 @@ def test_integration_backup_zip_to_fs(mock_source_dir, mock_dest_dir, monkeypatc
 
 
 def test_integration_backup_with_encryption(mock_source_dir, mock_dest_dir, monkeypatch):
-    monkeypatch.setenv('FS_ROOT', mock_dest_dir)
-    
     identity = x25519.Identity.generate()
     recipient = identity.to_public()
     
     success = backup(
         source_path=mock_source_dir,
-        destinations=[{'service': 'fs', 'root': ''}],
+        destinations=[{'service': 'fs', 'root': '', 'storage': {'root': mock_dest_dir}}],
         compression='tar.gz',
         archive_name='encrypted_backup',
         encryption_enabled=True,
@@ -102,13 +92,11 @@ def test_integration_backup_with_encryption(mock_source_dir, mock_dest_dir, monk
 
 
 def test_integration_backup_with_dest_root(mock_source_dir, mock_dest_dir, monkeypatch):
-    monkeypatch.setenv('FS_ROOT', mock_dest_dir)
-    
     dest_root = 'backups/prod'
     
     success = backup(
         source_path=mock_source_dir,
-        destinations=[{'service': 'fs', 'root': dest_root}],
+        destinations=[{'service': 'fs', 'root': dest_root, 'storage': {'root': mock_dest_dir}}],
         compression='tar',
         archive_name='test_backup'
     )
@@ -120,12 +108,10 @@ def test_integration_backup_with_dest_root(mock_source_dir, mock_dest_dir, monke
 
 
 def test_integration_backup_with_retention(mock_source_dir, mock_dest_dir, monkeypatch):
-    monkeypatch.setenv('FS_ROOT', mock_dest_dir)
-    
     for i in range(10):
         backup(
             source_path=mock_source_dir,
-            destinations=[{'service': 'fs', 'root': ''}],
+            destinations=[{'service': 'fs', 'root': '', 'storage': {'root': mock_dest_dir}}],
             compression='tar'
         )
     
@@ -140,7 +126,7 @@ def test_integration_backup_with_retention(mock_source_dir, mock_dest_dir, monke
     
     success = backup(
         source_path=mock_source_dir,
-        destinations=[{'service': 'fs', 'root': ''}],
+        destinations=[{'service': 'fs', 'root': '', 'storage': {'root': mock_dest_dir}}],
         compression='tar',
         retention_config=retention_config
     )
@@ -152,11 +138,9 @@ def test_integration_backup_with_retention(mock_source_dir, mock_dest_dir, monke
 
 
 def test_integration_backup_tar_format(mock_source_dir, mock_dest_dir, monkeypatch):
-    monkeypatch.setenv('FS_ROOT', mock_dest_dir)
-    
     success = backup(
         source_path=mock_source_dir,
-        destinations=[{'service': 'fs', 'root': ''}],
+        destinations=[{'service': 'fs', 'root': '', 'storage': {'root': mock_dest_dir}}],
         compression='tar'
     )
     
@@ -168,11 +152,9 @@ def test_integration_backup_tar_format(mock_source_dir, mock_dest_dir, monkeypat
 
 
 def test_integration_backup_auto_archive_name(mock_source_dir, mock_dest_dir, monkeypatch):
-    monkeypatch.setenv('FS_ROOT', mock_dest_dir)
-    
     success = backup(
         source_path=mock_source_dir,
-        destinations=[{'service': 'fs', 'root': ''}],
+        destinations=[{'service': 'fs', 'root': '', 'storage': {'root': mock_dest_dir}}],
         compression='tar'
     )
     
@@ -180,3 +162,4 @@ def test_integration_backup_auto_archive_name(mock_source_dir, mock_dest_dir, mo
     
     backup_files = list(Path(mock_dest_dir).glob('backup_source_*.tar'))
     assert len(backup_files) == 1
+
