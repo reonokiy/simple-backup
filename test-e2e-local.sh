@@ -282,11 +282,44 @@ echo "Original data: $ORIGINAL_DATA"
 
 echo ""
 echo "Verifying FS backup integrity..."
-BACKUP_FILE_FS=$(kubectl exec $POD_FS -c backup -- sh -c 'ls -t /tmp/backups/*.tar.zst | head -1')
-echo "Extracting $BACKUP_FILE_FS..."
-kubectl exec $POD_FS -c backup -- sh -c "mkdir -p /tmp/restore-fs && tar -xf $BACKUP_FILE_FS -C /tmp/restore-fs"
-RESTORED_DATA_FS=$(kubectl exec $POD_FS -c backup -- cat /tmp/restore-fs/data/test.txt)
+POD_FS=$(kubectl get pods -l job-name=e2e-backup-fs-test -o jsonpath='{.items[0].metadata.name}')
+
+# Create a verification pod to extract and verify the backup
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fs-backup-verifier
+spec:
+  restartPolicy: Never
+  containers:
+  - name: verifier
+    image: busybox:latest
+    command: ["/bin/sh", "-c", "sleep 300"]
+    volumeMounts:
+    - name: backups
+      mountPath: /backups
+  volumes:
+  - name: backups
+    emptyDir: {}
+EOF
+
+kubectl wait --for=condition=ready pod/fs-backup-verifier --timeout=60s
+
+# Copy backup file from completed pod to verifier pod
+BACKUP_FILE=$(kubectl logs $POD_FS -c backup | grep -oP '/tmp/backups/[^ ]+\.tar\.zst' | head -1)
+echo "Copying backup file: $BACKUP_FILE"
+kubectl cp $POD_FS:/tmp/backups/ fs-backup-verifier:/backups/ -c backup
+
+# Extract and verify
+BACKUP_FILENAME=$(basename $BACKUP_FILE)
+echo "Extracting /backups/$BACKUP_FILENAME..."
+kubectl exec fs-backup-verifier -- sh -c "tar -xf /backups/$BACKUP_FILENAME -C /tmp/"
+RESTORED_DATA_FS=$(kubectl exec fs-backup-verifier -- cat /tmp/data/test.txt)
 echo "Restored data (FS): $RESTORED_DATA_FS"
+
+# Cleanup verifier pod
+kubectl delete pod fs-backup-verifier
 
 if [ "$ORIGINAL_DATA" != "$RESTORED_DATA_FS" ]; then
     echo "ERROR: FS backup data mismatch!"
