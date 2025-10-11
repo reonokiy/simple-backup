@@ -2,6 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   srcDir: "docs",
+  base: "/simple-backup/",
   
   title: "Simple Backup",
   description: "A simple backup tool for selfhosted services",
@@ -28,6 +29,14 @@ export default defineConfig({
           { text: 'Docker', link: '/docker' },
           { text: 'Kubernetes', link: '/kubernetes' },
           { text: 'Systemd', link: '/systemd' }
+        ]
+      },
+      {
+        text: 'Kubernetes Operator',
+        items: [
+          { text: 'Helm Operator', link: '/helm-operator' },
+          { text: 'Helm Testing', link: '/helm-testing' },
+          { text: 'Test Coverage', link: '/helm-test-coverage' }
         ]
       }
     ],

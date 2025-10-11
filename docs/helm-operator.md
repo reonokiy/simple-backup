@@ -37,7 +37,7 @@ uv sync
 
 ## Testing
 
-See [TESTING.md](TESTING.md) for comprehensive testing documentation.
+See [Helm Testing](./helm-testing.md) for comprehensive testing documentation.
 
 ### Quick Start
 
