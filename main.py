@@ -55,40 +55,95 @@ def load_config_from_file(config_path: Optional[str] = None) -> Dict[str, Any]:
         return {}
 
 
+def load_env_config() -> Dict[str, Any]:
+    env_config: Dict[str, Any] = {}
+    
+    for key, value in os.environ.items():
+        if key.startswith('BACKUP_'):
+            env_key = key[7:].lower()
+            
+            mapping = {
+                'source_path': 'source_path',
+                'dest_service': 'dest_service',
+                'dest_root': 'dest_root',
+                'cron_schedule': 'cron_schedule',
+                'compression': 'compression',
+                'archive_name': 'archive_name',
+                'retention_max_backups': ('retention', 'max_backups'),
+                'retention_daily': ('retention', 'daily'),
+                'retention_weekly': ('retention', 'weekly'),
+                'retention_monthly': ('retention', 'monthly'),
+                'retention_yearly': ('retention', 'yearly'),
+                'encryption_enabled': ('encryption', 'enabled'),
+                'encryption_recipient': ('encryption', 'recipient'),
+                'encryption_identity': ('encryption', 'identity'),
+            }
+            
+            if env_key in mapping:
+                mapped_key = mapping[env_key]
+                if isinstance(mapped_key, tuple):
+                    if mapped_key[0] not in env_config:
+                        env_config[mapped_key[0]] = {}
+                    
+                    if env_key == 'encryption_enabled':
+                        env_config[mapped_key[0]][mapped_key[1]] = value.lower() == 'true'
+                    else:
+                        env_config[mapped_key[0]][mapped_key[1]] = value
+                else:
+                    env_config[mapped_key] = value
+    
+    return env_config
+
+
+def merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    result = base.copy()
+    
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = merge_dicts(result[key], value)
+        else:
+            result[key] = value
+    
+    return result
+
+
 def load_config() -> Dict[str, Any]:
     file_config = load_config_from_file()
+    env_config = load_env_config()
+    
+    merged_config = merge_dicts(file_config, env_config)
     
     config = {
-        'source_path': os.getenv('BACKUP_SOURCE_PATH') or file_config.get('source_path'),
-        'cron_schedule': os.getenv('BACKUP_CRON_SCHEDULE') or file_config.get('cron_schedule'),
-        'compression': os.getenv('BACKUP_COMPRESSION') or file_config.get('compression', 'tar.zst'),
-        'archive_name': os.getenv('BACKUP_ARCHIVE_NAME') or file_config.get('archive_name'),
-        'retention_max_backups': int(os.getenv('BACKUP_RETENTION_MAX_BACKUPS') or file_config.get('retention', {}).get('max_backups', 0)),
-        'retention_daily': int(os.getenv('BACKUP_RETENTION_DAILY') or file_config.get('retention', {}).get('daily', 7)),
-        'retention_weekly': int(os.getenv('BACKUP_RETENTION_WEEKLY') or file_config.get('retention', {}).get('weekly', 4)),
-        'retention_monthly': int(os.getenv('BACKUP_RETENTION_MONTHLY') or file_config.get('retention', {}).get('monthly', 6)),
-        'retention_yearly': int(os.getenv('BACKUP_RETENTION_YEARLY') or file_config.get('retention', {}).get('yearly', 2)),
-        'encryption_enabled': (os.getenv('BACKUP_ENCRYPTION_ENABLED', '').lower() == 'true') or file_config.get('encryption', {}).get('enabled', False),
-        'encryption_recipient': os.getenv('BACKUP_ENCRYPTION_RECIPIENT') or file_config.get('encryption', {}).get('recipient'),
-        'encryption_identity': os.getenv('BACKUP_ENCRYPTION_IDENTITY') or file_config.get('encryption', {}).get('identity'),
+        'source_path': merged_config.get('source_path'),
+        'cron_schedule': merged_config.get('cron_schedule'),
+        'compression': merged_config.get('compression', 'tar.zst'),
+        'archive_name': merged_config.get('archive_name'),
+        'retention_max_backups': int(merged_config.get('retention', {}).get('max_backups', 0)),
+        'retention_daily': int(merged_config.get('retention', {}).get('daily', 7)),
+        'retention_weekly': int(merged_config.get('retention', {}).get('weekly', 4)),
+        'retention_monthly': int(merged_config.get('retention', {}).get('monthly', 6)),
+        'retention_yearly': int(merged_config.get('retention', {}).get('yearly', 2)),
+        'encryption_enabled': merged_config.get('encryption', {}).get('enabled', False),
+        'encryption_recipient': merged_config.get('encryption', {}).get('recipient'),
+        'encryption_identity': merged_config.get('encryption', {}).get('identity'),
     }
     
-    destinations = file_config.get('destinations', [])
+    destinations = merged_config.get('destinations', [])
     
     if not destinations:
-        legacy_dest_service = os.getenv('BACKUP_DEST_SERVICE') or file_config.get('dest_service')
+        legacy_dest_service = merged_config.get('dest_service')
         if legacy_dest_service:
             legacy_dest = {
                 'service': legacy_dest_service,
-                'root': os.getenv('BACKUP_DEST_ROOT') or file_config.get('dest_root', ''),
-                'storage': file_config.get('storage', {})
+                'root': merged_config.get('dest_root', ''),
+                'storage': merged_config.get('storage', {})
             }
             destinations = [legacy_dest]
     
     config['destinations'] = destinations
     
     if not config['source_path']:
-        raise ValueError("BACKUP_SOURCE_PATH environment variable or source_path in config file is required")
+        raise ValueError("BACKUP_SOURCE_PATH is required")
     if not config['destinations']:
         raise ValueError("At least one destination is required in 'destinations' array")
     
