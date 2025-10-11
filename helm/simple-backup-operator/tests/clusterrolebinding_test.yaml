@@ -8,7 +8,7 @@ tests:
           of: ClusterRoleBinding
       - equal:
           path: metadata.name
-          value: RELEASE-NAME-simple-backup-operator
+          value: RELEASE-NAME-simple-backup-operator-charts
 
   - it: should reference cluster role
     asserts:
@@ -17,7 +17,7 @@ tests:
           value: ClusterRole
       - equal:
           path: roleRef.name
-          value: RELEASE-NAME-simple-backup-operator
+          value: RELEASE-NAME-simple-backup-operator-charts
       - equal:
           path: roleRef.apiGroup
           value: rbac.authorization.k8s.io
@@ -29,7 +29,7 @@ tests:
           value: ServiceAccount
       - equal:
           path: subjects[0].name
-          value: RELEASE-NAME-simple-backup-operator
+          value: RELEASE-NAME-simple-backup-operator-charts
       - equal:
           path: subjects[0].namespace
           value: NAMESPACE
