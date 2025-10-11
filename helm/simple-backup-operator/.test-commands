@@ -1,0 +1,48 @@
+# Quick Test Commands Reference
+
+## Operator Tests
+cd helm/simple-backup-operator/operator
+
+# Run all operator tests
+uv run pytest -v
+
+# Run specific test file
+uv run pytest test_operator.py -v
+uv run pytest test_integration.py -v
+uv run pytest test_edge_cases.py -v
+
+# Run with coverage
+uv run pytest -v --cov=operator --cov-report=term-missing
+
+# Run specific test class or function
+uv run pytest test_operator.py::TestBackupJobController::test_create_cronjob_basic -v
+
+## Helm Chart Tests
+cd helm/simple-backup-operator
+
+# Run all Helm tests
+helm unittest . -v
+
+# Run specific test file
+helm unittest -f tests/deployment_test.yaml . -v
+
+# Lint chart
+helm lint .
+
+# Template chart
+helm template test-release .
+
+## Using Makefile
+cd helm/simple-backup-operator
+
+# Run all tests
+make test-all
+
+# Run only operator tests
+make test-operator
+
+# Run only Helm tests
+make test-helm
+
+# Install testing tools
+make install-tools

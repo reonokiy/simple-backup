@@ -12,6 +12,8 @@ import tempfile
 import shutil
 import re
 import argparse
+import tomllib
+import json
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -28,28 +30,69 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def load_config_from_file(config_path=None):
+    if not config_path:
+        for path in ['config.toml', 'config.yaml', 'config.yml']:
+            if os.path.exists(path):
+                config_path = path
+                break
+    
+    if not config_path or not os.path.exists(config_path):
+        return {}
+    
+    logger.info(f"Loading configuration from {config_path}")
+    
+    if config_path.endswith('.toml'):
+        with open(config_path, 'rb') as f:
+            return tomllib.load(f)
+    elif config_path.endswith(('.yaml', '.yml')):
+        try:
+            import yaml
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f) or {}
+        except ImportError:
+            logger.warning("PyYAML not installed. Install with: pip install pyyaml")
+            return {}
+    else:
+        logger.warning(f"Unsupported config file format: {config_path}")
+        return {}
+
+
 def load_config():
+    file_config = load_config_from_file()
+    
     config = {
-        'source_path': os.getenv('BACKUP_SOURCE_PATH'),
-        'dest_service': os.getenv('BACKUP_DEST_SERVICE'),
-        'dest_root': os.getenv('BACKUP_DEST_ROOT', ''),
-        'cron_schedule': os.getenv('BACKUP_CRON_SCHEDULE'),
-        'compression': os.getenv('BACKUP_COMPRESSION', 'tar.zst'),
-        'archive_name': os.getenv('BACKUP_ARCHIVE_NAME'),
-        'retention_max_backups': int(os.getenv('BACKUP_RETENTION_MAX_BACKUPS', '0')),
-        'retention_daily': int(os.getenv('BACKUP_RETENTION_DAILY', '7')),
-        'retention_weekly': int(os.getenv('BACKUP_RETENTION_WEEKLY', '4')),
-        'retention_monthly': int(os.getenv('BACKUP_RETENTION_MONTHLY', '6')),
-        'retention_yearly': int(os.getenv('BACKUP_RETENTION_YEARLY', '2')),
-        'encryption_enabled': os.getenv('BACKUP_ENCRYPTION_ENABLED', 'false').lower() == 'true',
-        'encryption_recipient': os.getenv('BACKUP_ENCRYPTION_RECIPIENT'),
-        'encryption_identity': os.getenv('BACKUP_ENCRYPTION_IDENTITY'),
+        'source_path': os.getenv('BACKUP_SOURCE_PATH') or file_config.get('source_path'),
+        'cron_schedule': os.getenv('BACKUP_CRON_SCHEDULE') or file_config.get('cron_schedule'),
+        'compression': os.getenv('BACKUP_COMPRESSION') or file_config.get('compression', 'tar.zst'),
+        'archive_name': os.getenv('BACKUP_ARCHIVE_NAME') or file_config.get('archive_name'),
+        'retention_max_backups': int(os.getenv('BACKUP_RETENTION_MAX_BACKUPS') or file_config.get('retention', {}).get('max_backups', 0)),
+        'retention_daily': int(os.getenv('BACKUP_RETENTION_DAILY') or file_config.get('retention', {}).get('daily', 7)),
+        'retention_weekly': int(os.getenv('BACKUP_RETENTION_WEEKLY') or file_config.get('retention', {}).get('weekly', 4)),
+        'retention_monthly': int(os.getenv('BACKUP_RETENTION_MONTHLY') or file_config.get('retention', {}).get('monthly', 6)),
+        'retention_yearly': int(os.getenv('BACKUP_RETENTION_YEARLY') or file_config.get('retention', {}).get('yearly', 2)),
+        'encryption_enabled': (os.getenv('BACKUP_ENCRYPTION_ENABLED', '').lower() == 'true') or file_config.get('encryption', {}).get('enabled', False),
+        'encryption_recipient': os.getenv('BACKUP_ENCRYPTION_RECIPIENT') or file_config.get('encryption', {}).get('recipient'),
+        'encryption_identity': os.getenv('BACKUP_ENCRYPTION_IDENTITY') or file_config.get('encryption', {}).get('identity'),
     }
     
+    destinations = []
+    if 'destinations' in file_config and file_config['destinations']:
+        destinations = file_config['destinations']
+    elif os.getenv('BACKUP_DEST_SERVICE') or file_config.get('dest_service'):
+        legacy_dest = {
+            'service': os.getenv('BACKUP_DEST_SERVICE') or file_config.get('dest_service'),
+            'root': os.getenv('BACKUP_DEST_ROOT') or file_config.get('dest_root', ''),
+            'storage': file_config.get('storage', {}),
+        }
+        destinations = [legacy_dest]
+    
+    config['destinations'] = destinations
+    
     if not config['source_path']:
-        raise ValueError("BACKUP_SOURCE_PATH environment variable is required")
-    if not config['dest_service']:
-        raise ValueError("BACKUP_DEST_SERVICE environment variable is required")
+        raise ValueError("BACKUP_SOURCE_PATH environment variable or source_path in config file is required")
+    if not config['destinations']:
+        raise ValueError("At least one destination is required (use 'destinations' array or legacy 'dest_service' config)")
     
     valid_compressions = ['none', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'tar.zst', 'zip', 'gzip']
     if config['compression'] not in valid_compressions:
@@ -65,59 +108,133 @@ def create_source_operator(source_path):
     return opendal.Operator("fs", root=source_path)
 
 
-def create_dest_operator(service_type):
+def get_service_config(service_type, storage_config):
+    def get_config_value(key, env_var):
+        return os.getenv(env_var) or storage_config.get(key)
+    
     service_configs = {
         's3': {
-            'bucket': os.getenv('S3_BUCKET'),
-            'region': os.getenv('S3_REGION'),
-            'access_key_id': os.getenv('S3_ACCESS_KEY_ID'),
-            'secret_access_key': os.getenv('S3_SECRET_ACCESS_KEY'),
-            'endpoint': os.getenv('S3_ENDPOINT'),
+            'bucket': get_config_value('bucket', 'S3_BUCKET'),
+            'region': get_config_value('region', 'S3_REGION'),
+            'access_key_id': get_config_value('access_key_id', 'S3_ACCESS_KEY_ID'),
+            'secret_access_key': get_config_value('secret_access_key', 'S3_SECRET_ACCESS_KEY'),
+            'endpoint': get_config_value('endpoint', 'S3_ENDPOINT'),
         },
         'azblob': {
-            'container': os.getenv('AZURE_CONTAINER'),
-            'account_name': os.getenv('AZURE_ACCOUNT_NAME'),
-            'account_key': os.getenv('AZURE_ACCOUNT_KEY'),
+            'container': get_config_value('container', 'AZURE_CONTAINER'),
+            'account_name': get_config_value('account_name', 'AZURE_ACCOUNT_NAME'),
+            'account_key': get_config_value('account_key', 'AZURE_ACCOUNT_KEY'),
         },
         'gcs': {
-            'bucket': os.getenv('GCS_BUCKET'),
-            'credential': os.getenv('GCS_CREDENTIAL'),
+            'bucket': get_config_value('bucket', 'GCS_BUCKET'),
+            'credential': get_config_value('credential', 'GCS_CREDENTIAL'),
         },
         'fs': {
-            'root': os.getenv('FS_ROOT'),
+            'root': get_config_value('root', 'FS_ROOT'),
         },
         'oss': {
-            'bucket': os.getenv('OSS_BUCKET'),
-            'endpoint': os.getenv('OSS_ENDPOINT'),
-            'access_key_id': os.getenv('OSS_ACCESS_KEY_ID'),
-            'access_key_secret': os.getenv('OSS_ACCESS_KEY_SECRET'),
+            'bucket': get_config_value('bucket', 'OSS_BUCKET'),
+            'endpoint': get_config_value('endpoint', 'OSS_ENDPOINT'),
+            'access_key_id': get_config_value('access_key_id', 'OSS_ACCESS_KEY_ID'),
+            'access_key_secret': get_config_value('access_key_secret', 'OSS_ACCESS_KEY_SECRET'),
         },
         'obs': {
-            'bucket': os.getenv('OBS_BUCKET'),
-            'endpoint': os.getenv('OBS_ENDPOINT'),
-            'access_key_id': os.getenv('OBS_ACCESS_KEY_ID'),
-            'secret_access_key': os.getenv('OBS_SECRET_ACCESS_KEY'),
+            'bucket': get_config_value('bucket', 'OBS_BUCKET'),
+            'endpoint': get_config_value('endpoint', 'OBS_ENDPOINT'),
+            'access_key_id': get_config_value('access_key_id', 'OBS_ACCESS_KEY_ID'),
+            'secret_access_key': get_config_value('secret_access_key', 'OBS_SECRET_ACCESS_KEY'),
         },
         'cos': {
-            'bucket': os.getenv('COS_BUCKET'),
-            'region': os.getenv('COS_REGION'),
-            'secret_id': os.getenv('COS_SECRET_ID'),
-            'secret_key': os.getenv('COS_SECRET_KEY'),
+            'bucket': get_config_value('bucket', 'COS_BUCKET'),
+            'region': get_config_value('region', 'COS_REGION'),
+            'secret_id': get_config_value('secret_id', 'COS_SECRET_ID'),
+            'secret_key': get_config_value('secret_key', 'COS_SECRET_KEY'),
         },
         'webdav': {
-            'endpoint': os.getenv('WEBDAV_ENDPOINT'),
-            'username': os.getenv('WEBDAV_USERNAME'),
-            'password': os.getenv('WEBDAV_PASSWORD'),
+            'endpoint': get_config_value('endpoint', 'WEBDAV_ENDPOINT'),
+            'username': get_config_value('username', 'WEBDAV_USERNAME'),
+            'password': get_config_value('password', 'WEBDAV_PASSWORD'),
         },
     }
     
     if service_type not in service_configs:
         raise ValueError(f"Unsupported service type: {service_type}")
     
-    config = service_configs[service_type]
+    return service_configs[service_type]
+
+
+def create_dest_operator(service_type, storage_config=None):
+    if storage_config is None:
+        storage_config = {}
+    
+    opendal_config = {}
+    
+    for key, value in os.environ.items():
+        if key.startswith('OPENDAL_'):
+            config_key = key[8:].lower()
+            opendal_config[config_key] = value
+    
+    if opendal_config:
+        logger.info(f"Using OPENDAL_* environment variables for {service_type} configuration")
+        return opendal.Operator(service_type, **opendal_config)
+    
+    config = get_service_config(service_type, storage_config)
     config = {k: v for k, v in config.items() if v is not None}
     
     return opendal.Operator(service_type, **config)
+
+
+def test_destination_connectivity(dest):
+    dest_service = dest['service']
+    dest_root = dest.get('root', '')
+    storage_config = dest.get('storage', {})
+    
+    try:
+        logger.info(f"Testing connectivity to {dest_service}...")
+        dest_op = create_dest_operator(dest_service, storage_config)
+        
+        test_path = os.path.join(dest_root, '.simple-backup-test') if dest_root else '.simple-backup-test'
+        test_data = b'test'
+        
+        dest_op.write(test_path, test_data)
+        logger.debug(f"Write test successful: {test_path}")
+        
+        read_data = dest_op.read(test_path)
+        if read_data != test_data:
+            raise ValueError(f"Read test failed: data mismatch")
+        logger.debug(f"Read test successful: {test_path}")
+        
+        dest_op.delete(test_path)
+        logger.debug(f"Delete test successful: {test_path}")
+        
+        logger.info(f"✓ {dest_service} connectivity test passed")
+        return True
+    
+    except Exception as e:
+        logger.error(f"✗ {dest_service} connectivity test failed: {e}")
+        return False
+
+
+def validate_destinations(destinations):
+    logger.info(f"Validating {len(destinations)} destination(s)...")
+    
+    results = []
+    for idx, dest in enumerate(destinations, 1):
+        dest_service = dest['service']
+        logger.info(f"Testing destination {idx}/{len(destinations)}: {dest_service}")
+        success = test_destination_connectivity(dest)
+        results.append({'destination': dest_service, 'success': success})
+    
+    failed = [r for r in results if not r['success']]
+    
+    if failed:
+        logger.error(f"Destination validation failed: {len(failed)}/{len(destinations)} destination(s) unreachable")
+        for fail in failed:
+            logger.error(f"  - {fail['destination']}")
+        return False
+    
+    logger.info(f"✓ All {len(destinations)} destination(s) validated successfully")
+    return True
 
 
 def create_archive(source_path, compression_format, archive_name=None):
@@ -291,11 +408,11 @@ def extract_archive(archive_path, dest_path):
         raise e
 
 
-def restore(backup_path, dest_path, dest_service='fs', identity_key=None):
+def restore(backup_path, dest_path, dest_service='fs', identity_key=None, storage_config=None):
     logger.info(f"Starting restore from {backup_path} to {dest_path}")
     
     try:
-        dest_op = create_dest_operator(dest_service)
+        dest_op = create_dest_operator(dest_service, storage_config)
         
         temp_dir = tempfile.mkdtemp()
         local_backup_path = os.path.join(temp_dir, Path(backup_path).name)
@@ -335,9 +452,9 @@ def restore(backup_path, dest_path, dest_service='fs', identity_key=None):
         return False
 
 
-def list_available_backups(dest_service, dest_root=''):
+def list_available_backups(dest_service, dest_root='', storage_config=None):
     try:
-        dest_op = create_dest_operator(dest_service)
+        dest_op = create_dest_operator(dest_service, storage_config)
         backups = list_backups(dest_op, dest_root)
         
         if not backups:
@@ -536,27 +653,49 @@ def cleanup_old_backups(dest_op, retention_config):
     logger.info(f"Cleanup completed: {deleted_count} backups deleted, {len(backups) - deleted_count} retained")
 
 
-def backup(source_path, dest_service, dest_root, compression='none', archive_name=None, retention_config=None, encryption_enabled=False, encryption_recipient=None):
-    logger.info(f"Starting backup from {source_path} to {dest_service}")
+def backup(source_path, destinations, compression='none', archive_name=None, retention_config=None, encryption_enabled=False, encryption_recipient=None):
+    logger.info(f"Starting backup from {source_path} to {len(destinations)} destination(s)")
     
-    dest_op = create_dest_operator(dest_service)
+    if not destinations:
+        logger.error("No destinations provided")
+        return False
+    
+    results = []
     
     if compression == 'none':
         src_op = create_source_operator(source_path)
         files = list_files_recursive(src_op)
         logger.info(f"Found {len(files)} files to backup")
         
-        success_count = 0
-        fail_count = 0
-        
-        for file_path in files:
-            if backup_file(src_op, dest_op, file_path, dest_root):
-                success_count += 1
-            else:
-                fail_count += 1
-        
-        logger.info(f"Backup completed: {success_count} succeeded, {fail_count} failed")
-        success = fail_count == 0
+        for idx, dest in enumerate(destinations, 1):
+            dest_service = dest['service']
+            dest_root = dest.get('root', '')
+            storage_config = dest.get('storage', {})
+            
+            logger.info(f"Backing up to destination {idx}/{len(destinations)}: {dest_service}")
+            
+            try:
+                dest_op = create_dest_operator(dest_service, storage_config)
+                
+                success_count = 0
+                fail_count = 0
+                
+                for file_path in files:
+                    if backup_file(src_op, dest_op, file_path, dest_root):
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                
+                logger.info(f"Destination {idx} completed: {success_count} succeeded, {fail_count} failed")
+                dest_success = fail_count == 0
+                results.append({'destination': dest_service, 'success': dest_success})
+                
+                if dest_success and retention_config:
+                    retention_with_root = {**retention_config, 'dest_root': dest_root}
+                    cleanup_old_backups(dest_op, retention_with_root)
+            except Exception as e:
+                logger.error(f"Failed to backup to destination {idx} ({dest_service}): {e}")
+                results.append({'destination': dest_service, 'success': False})
     else:
         archive_path, temp_dir = create_archive(source_path, compression, archive_name)
         
@@ -571,39 +710,56 @@ def backup(source_path, dest_service, dest_root, compression='none', archive_nam
                 archive_data = f.read()
             
             archive_filename = Path(archive_path).name
-            dest_path = os.path.join(dest_root, archive_filename) if dest_root else archive_filename
             
-            dest_op.write(dest_path, archive_data)
-            logger.info(f"Backup completed: {archive_filename} -> {dest_path}")
-            
-            success = True
-        except Exception as e:
-            logger.error(f"Failed to backup archive: {e}")
-            success = False
+            for idx, dest in enumerate(destinations, 1):
+                dest_service = dest['service']
+                dest_root = dest.get('root', '')
+                storage_config = dest.get('storage', {})
+                
+                logger.info(f"Uploading to destination {idx}/{len(destinations)}: {dest_service}")
+                
+                try:
+                    dest_op = create_dest_operator(dest_service, storage_config)
+                    dest_path = os.path.join(dest_root, archive_filename) if dest_root else archive_filename
+                    
+                    dest_op.write(dest_path, archive_data)
+                    logger.info(f"Destination {idx} completed: {archive_filename} -> {dest_path}")
+                    
+                    results.append({'destination': dest_service, 'success': True})
+                    
+                    if retention_config:
+                        retention_with_root = {**retention_config, 'dest_root': dest_root}
+                        cleanup_old_backups(dest_op, retention_with_root)
+                except Exception as e:
+                    logger.error(f"Failed to upload to destination {idx} ({dest_service}): {e}")
+                    results.append({'destination': dest_service, 'success': False})
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
     
-    if success and retention_config:
-        cleanup_old_backups(dest_op, retention_config)
+    success_count = sum(1 for r in results if r['success'])
+    logger.info(f"Backup completed: {success_count}/{len(destinations)} destinations succeeded")
     
-    return success
+    return all(r['success'] for r in results)
 
 
 def run_backup_job():
     try:
         config = load_config()
+        
+        if not validate_destinations(config['destinations']):
+            logger.error("Destination validation failed. Aborting backup.")
+            return
+        
         retention_config = {
             'max_backups': config['retention_max_backups'],
             'daily': config['retention_daily'],
             'weekly': config['retention_weekly'],
             'monthly': config['retention_monthly'],
             'yearly': config['retention_yearly'],
-            'dest_root': config['dest_root']
         }
         backup(
             config['source_path'],
-            config['dest_service'],
-            config['dest_root'],
+            config['destinations'],
             config['compression'],
             config['archive_name'],
             retention_config,
@@ -634,22 +790,33 @@ def main():
     args = parser.parse_args()
     
     if args.command == 'restore':
+        config = load_config()
+        first_dest = config['destinations'][0] if config['destinations'] else {}
+        storage_config = first_dest.get('storage', {})
         identity_key = args.identity_key or os.getenv('AGE_IDENTITY_KEY')
         success = restore(
             args.backup_path,
             args.dest_path,
             args.dest_service,
-            identity_key
+            identity_key,
+            storage_config
         )
         sys.exit(0 if success else 1)
     
     elif args.command == 'list':
-        list_available_backups(args.dest_service, args.dest_root)
+        config = load_config()
+        first_dest = config['destinations'][0] if config['destinations'] else {}
+        storage_config = first_dest.get('storage', {})
+        list_available_backups(args.dest_service, args.dest_root, storage_config)
         sys.exit(0)
     
     else:
         try:
             config = load_config()
+            
+            if not validate_destinations(config['destinations']):
+                logger.error("Destination validation failed. Please check your configuration and network connectivity.")
+                sys.exit(1)
             
             if config['cron_schedule']:
                 logger.info(f"Starting backup scheduler with cron: {config['cron_schedule']}")
@@ -677,12 +844,10 @@ def main():
                     'weekly': config['retention_weekly'],
                     'monthly': config['retention_monthly'],
                     'yearly': config['retention_yearly'],
-                    'dest_root': config['dest_root']
                 }
                 success = backup(
                     config['source_path'],
-                    config['dest_service'],
-                    config['dest_root'],
+                    config['destinations'],
                     config['compression'],
                     config['archive_name'],
                     retention_config,

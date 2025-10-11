@@ -1,5 +1,8 @@
 import os
 import pytest
+import tempfile
+import tomllib
+from pathlib import Path
 from main import load_config
 
 
@@ -10,26 +13,27 @@ def test_load_config_minimal(monkeypatch):
     config = load_config()
     
     assert config['source_path'] == '/source'
-    assert config['dest_service'] == 's3'
     assert config['compression'] == 'tar.zst'
     assert config['retention_daily'] == 7
     assert config['retention_weekly'] == 4
     assert config['retention_monthly'] == 6
     assert config['retention_yearly'] == 2
     assert config['encryption_enabled'] is False
+    assert len(config['destinations']) == 1
+    assert config['destinations'][0]['service'] == 's3'
 
 
 def test_load_config_missing_source_path(monkeypatch):
     monkeypatch.setenv('BACKUP_DEST_SERVICE', 's3')
     
-    with pytest.raises(ValueError, match="BACKUP_SOURCE_PATH environment variable is required"):
+    with pytest.raises(ValueError, match="BACKUP_SOURCE_PATH"):
         load_config()
 
 
 def test_load_config_missing_dest_service(monkeypatch):
     monkeypatch.setenv('BACKUP_SOURCE_PATH', '/source')
     
-    with pytest.raises(ValueError, match="BACKUP_DEST_SERVICE environment variable is required"):
+    with pytest.raises(ValueError, match="At least one destination is required"):
         load_config()
 
 
@@ -103,14 +107,14 @@ def test_load_config_retention_settings(monkeypatch):
     assert config['retention_yearly'] == 5
 
 
-def test_load_config_dest_root(monkeypatch):
+def test_load_config_legacy_dest_root(monkeypatch):
     monkeypatch.setenv('BACKUP_SOURCE_PATH', '/source')
     monkeypatch.setenv('BACKUP_DEST_SERVICE', 's3')
     monkeypatch.setenv('BACKUP_DEST_ROOT', 'backups/prod')
     
     config = load_config()
     
-    assert config['dest_root'] == 'backups/prod'
+    assert config['destinations'][0]['root'] == 'backups/prod'
 
 
 def test_load_config_archive_name(monkeypatch):
@@ -121,3 +125,97 @@ def test_load_config_archive_name(monkeypatch):
     config = load_config()
     
     assert config['archive_name'] == 'custom_backup'
+
+
+def test_load_config_multiple_destinations_from_file(monkeypatch, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("""
+source_path = "/source"
+compression = "tar.zst"
+
+[[destinations]]
+service = "s3"
+root = "backups/"
+
+[destinations.storage]
+bucket = "bucket1"
+region = "us-east-1"
+
+[[destinations]]
+service = "azblob"
+root = "backups/"
+
+[destinations.storage]
+container = "container1"
+account_name = "account1"
+""")
+    
+    monkeypatch.chdir(tmp_path)
+    
+    config = load_config()
+    
+    assert config['source_path'] == '/source'
+    assert len(config['destinations']) == 2
+    assert config['destinations'][0]['service'] == 's3'
+    assert config['destinations'][0]['root'] == 'backups/'
+    assert config['destinations'][0]['storage']['bucket'] == 'bucket1'
+    assert config['destinations'][1]['service'] == 'azblob'
+    assert config['destinations'][1]['storage']['container'] == 'container1'
+
+
+def test_load_config_multiple_destinations_yaml(monkeypatch, tmp_path):
+    pytest.importorskip("yaml")
+    
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("""
+source_path: /source
+compression: tar.zst
+
+destinations:
+  - service: s3
+    root: backups/
+    storage:
+      bucket: bucket1
+      region: us-east-1
+  
+  - service: gcs
+    root: backups/
+    storage:
+      bucket: bucket2
+      credential: /path/to/creds.json
+""")
+    
+    monkeypatch.chdir(tmp_path)
+    
+    config = load_config()
+    
+    assert config['source_path'] == '/source'
+    assert len(config['destinations']) == 2
+    assert config['destinations'][0]['service'] == 's3'
+    assert config['destinations'][1]['service'] == 'gcs'
+    assert config['destinations'][1]['storage']['credential'] == '/path/to/creds.json'
+
+
+def test_load_config_legacy_format_backward_compatibility(monkeypatch, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("""
+source_path = "/source"
+dest_service = "s3"
+dest_root = "backups/"
+compression = "tar.gz"
+
+[storage]
+bucket = "my-bucket"
+region = "us-west-2"
+""")
+    
+    monkeypatch.chdir(tmp_path)
+    
+    config = load_config()
+    
+    assert config['source_path'] == '/source'
+    assert len(config['destinations']) == 1
+    assert config['destinations'][0]['service'] == 's3'
+    assert config['destinations'][0]['root'] == 'backups/'
+    assert config['destinations'][0]['storage']['bucket'] == 'my-bucket'
+    assert config['compression'] == 'tar.gz'

@@ -1,0 +1,44 @@
+suite: test cluster role binding
+templates:
+  - clusterrolebinding.yaml
+tests:
+  - it: should create cluster role binding
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-simple-backup-operator
+
+  - it: should reference cluster role
+    asserts:
+      - equal:
+          path: roleRef.kind
+          value: ClusterRole
+      - equal:
+          path: roleRef.name
+          value: RELEASE-NAME-simple-backup-operator
+      - equal:
+          path: roleRef.apiGroup
+          value: rbac.authorization.k8s.io
+
+  - it: should bind to service account
+    asserts:
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: RELEASE-NAME-simple-backup-operator
+      - equal:
+          path: subjects[0].namespace
+          value: NAMESPACE
+
+  - it: should use custom service account name
+    set:
+      serviceAccount:
+        name: custom-sa
+    asserts:
+      - equal:
+          path: subjects[0].name
+          value: custom-sa

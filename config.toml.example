@@ -1,0 +1,102 @@
+# Simple Backup Configuration File (TOML)
+# Copy this file to config.toml and customize for your needs
+
+# Source path to backup (required)
+source_path = "/path/to/backup"
+
+# Cron schedule for automated backups (optional)
+# Leave empty to run backup once
+# Format: "minute hour day month weekday"
+# Examples:
+#   "0 2 * * *"       - Daily at 2 AM
+#   "0 */6 * * *"     - Every 6 hours
+#   "0 2 * * 0"       - Weekly on Sunday at 2 AM
+cron_schedule = ""
+
+# Compression format (optional, default: tar.zst)
+# Options: none, tar, tar.gz, tar.bz2, tar.xz, tar.zst, zip, gzip
+compression = "tar.zst"
+
+# Custom archive name (optional)
+# If not set, will use: backup_<source_name>_<timestamp>
+archive_name = ""
+
+# Retention policy (optional)
+[retention]
+# Maximum number of backups to keep (0 = unlimited)
+max_backups = 0
+
+# Number of daily backups to keep
+daily = 7
+
+# Number of weekly backups to keep
+weekly = 4
+
+# Number of monthly backups to keep
+monthly = 6
+
+# Number of yearly backups to keep
+yearly = 2
+
+# Encryption settings (optional)
+[encryption]
+# Enable encryption with age
+enabled = false
+
+# Age recipient public key for encryption
+# Generate with: age-keygen
+recipient = ""
+
+# Age identity private key for decryption
+# Only needed for restore operations
+identity = ""
+
+# Destinations Configuration
+# You can define multiple backup destinations
+# Backups will be sent to all configured destinations
+
+# Example: Single destination (backward compatible)
+[[destinations]]
+service = "s3"
+root = "backups/"
+
+[destinations.storage]
+bucket = "my-backup-bucket"
+region = "us-east-1"
+access_key_id = "AKIAxxxxx"
+secret_access_key = "xxxxx"
+# endpoint = ""  # optional, for S3-compatible services
+
+# Example: Multiple destinations
+# [[destinations]]
+# service = "s3"
+# root = "backups/"
+# 
+# [destinations.storage]
+# bucket = "my-primary-bucket"
+# region = "us-east-1"
+# access_key_id = "AKIAxxxxx"
+# secret_access_key = "xxxxx"
+# 
+# [[destinations]]
+# service = "azblob"
+# root = "backups/"
+# 
+# [destinations.storage]
+# container = "my-backups"
+# account_name = "myaccount"
+# account_key = "xxxxx"
+# 
+# [[destinations]]
+# service = "fs"
+# root = "backups/"
+# 
+# [destinations.storage]
+# root = "/mnt/local-backup"
+
+# Legacy single destination format (deprecated but still supported)
+# dest_service = "s3"
+# dest_root = "backups/"
+# [storage]
+# bucket = "my-backup-bucket"
+# region = "us-east-1"

@@ -1,0 +1,87 @@
+suite: test cluster role
+templates:
+  - clusterrole.yaml
+tests:
+  - it: should create cluster role with correct permissions
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-simple-backup-operator
+
+  - it: should have permissions for backupjobs custom resource
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - backup.simple-backup.io
+            resources:
+              - backupjobs
+            verbs:
+              - get
+              - list
+              - watch
+              - create
+              - update
+              - patch
+              - delete
+
+  - it: should have permissions for backupjobs status
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - backup.simple-backup.io
+            resources:
+              - backupjobs/status
+            verbs:
+              - get
+              - update
+              - patch
+
+  - it: should have permissions for cronjobs
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - batch
+            resources:
+              - cronjobs
+            verbs:
+              - get
+              - list
+              - watch
+              - create
+              - update
+              - patch
+              - delete
+
+  - it: should have permissions for secrets
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - ""
+            resources:
+              - secrets
+            verbs:
+              - get
+              - list
+
+  - it: should have permissions for events
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - ""
+            resources:
+              - events
+            verbs:
+              - create
+              - patch

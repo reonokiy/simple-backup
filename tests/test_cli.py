@@ -10,12 +10,12 @@ from main import run_backup_job, main
 
 def test_run_backup_job_success():
     with patch('main.load_config') as mock_load_config, \
-         patch('main.backup') as mock_backup:
+         patch('main.backup') as mock_backup, \
+         patch('main.validate_destinations') as mock_validate:
         
         mock_load_config.return_value = {
             'source_path': '/test/source',
-            'dest_service': 'fs',
-            'dest_root': '/test/dest',
+            'destinations': [{'service': 'fs', 'root': '/test/dest', 'storage': {}}],
             'compression': 'tar.gz',
             'archive_name': 'test',
             'retention_max_backups': 5,
@@ -27,12 +27,12 @@ def test_run_backup_job_success():
             'encryption_recipient': None
         }
         
+        mock_validate.return_value = True
+        
         run_backup_job()
         
+        mock_validate.assert_called_once()
         mock_backup.assert_called_once()
-        args = mock_backup.call_args
-        assert args[0][0] == '/test/source'
-        assert args[0][1] == 'fs'
 
 
 def test_run_backup_job_failure():

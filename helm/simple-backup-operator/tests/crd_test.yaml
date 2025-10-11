@@ -1,0 +1,92 @@
+suite: test crd
+templates:
+  - crd.yaml
+tests:
+  - it: should create custom resource definition
+    asserts:
+      - isKind:
+          of: CustomResourceDefinition
+      - equal:
+          path: metadata.name
+          value: backupjobs.backup.simple-backup.io
+
+  - it: should have correct group and version
+    asserts:
+      - equal:
+          path: spec.group
+          value: backup.simple-backup.io
+      - contains:
+          path: spec.versions
+          content:
+            name: v1alpha1
+            served: true
+            storage: true
+
+  - it: should be namespaced
+    asserts:
+      - equal:
+          path: spec.scope
+          value: Namespaced
+
+  - it: should have plural and singular names
+    asserts:
+      - equal:
+          path: spec.names.plural
+          value: backupjobs
+      - equal:
+          path: spec.names.singular
+          value: backupjob
+      - equal:
+          path: spec.names.kind
+          value: BackupJob
+
+  - it: should have required spec fields in schema
+    asserts:
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec
+      - contains:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.required
+          content: source
+      - contains:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.required
+          content: destination
+
+  - it: should have source schema definition
+    asserts:
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.source
+      - equal:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.source.type
+          value: object
+      - contains:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.source.required
+          content: path
+
+  - it: should have destination schema definition
+    asserts:
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.destination
+      - equal:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.destination.type
+          value: object
+      - contains:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.destination.required
+          content: service
+
+  - it: should have optional fields in schema
+    asserts:
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.schedule
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.compression
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.retention
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.encryption
+      - isNotNull:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.resources
+
+  - it: should have status subresource enabled
+    asserts:
+      - isNotNull:
+          path: spec.versions[0].subresources.status
