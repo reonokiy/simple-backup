@@ -1,5 +1,5 @@
 apiVersion: v2
-name: simple-backup-operator
+name: simple-backup-operator-charts
 description: Kubernetes operator for managing BackupJob resources
 type: application
 version: 0.1.0
