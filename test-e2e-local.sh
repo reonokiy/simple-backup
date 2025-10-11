@@ -117,7 +117,7 @@ echo "=== Creating Test Deployment ==="
 kubectl create deployment test-app \
     --image=busybox:latest \
     --replicas=2 \
-    -- /bin/sh -c 'mkdir -p /data && echo "Test data at $(date)" > /data/test.txt && sleep 3600' || true
+    -- /bin/sh -c 'mkdir -p /data && echo "E2E test data for simple-backup" > /data/test.txt && sleep 3600' || true
 
 kubectl wait --for=condition=available deployment/test-app --timeout=120s
 
@@ -272,6 +272,45 @@ POD_WEBDAV_SERVER=$(kubectl get pods -l app=webdav -o jsonpath='{.items[0].metad
 kubectl exec $POD_WEBDAV_SERVER -- ls -lah /var/lib/dav/data/backups/
 kubectl exec $POD_WEBDAV_SERVER -- sh -c 'test -n "$(ls -A /var/lib/dav/data/backups/)"'
 echo "✓ Backup files exist on WebDAV server"
+
+echo ""
+echo "=== Verifying Backup Integrity ==="
+echo "Getting original test data..."
+TEST_POD=$(kubectl get pods -l app=test-app -o jsonpath='{.items[0].metadata.name}')
+ORIGINAL_DATA=$(kubectl exec $TEST_POD -- cat /data/test.txt)
+echo "Original data: $ORIGINAL_DATA"
+
+echo ""
+echo "Verifying FS backup integrity..."
+BACKUP_FILE_FS=$(kubectl exec $POD_FS -c backup -- sh -c 'ls -t /tmp/backups/*.tar.zst | head -1')
+echo "Extracting $BACKUP_FILE_FS..."
+kubectl exec $POD_FS -c backup -- sh -c "mkdir -p /tmp/restore-fs && tar -xf $BACKUP_FILE_FS -C /tmp/restore-fs"
+RESTORED_DATA_FS=$(kubectl exec $POD_FS -c backup -- cat /tmp/restore-fs/data/test.txt)
+echo "Restored data (FS): $RESTORED_DATA_FS"
+
+if [ "$ORIGINAL_DATA" != "$RESTORED_DATA_FS" ]; then
+    echo "ERROR: FS backup data mismatch!"
+    echo "Expected: $ORIGINAL_DATA"
+    echo "Got: $RESTORED_DATA_FS"
+    exit 1
+fi
+echo "✓ FS backup integrity verified"
+
+echo ""
+echo "Verifying WebDAV backup integrity..."
+BACKUP_FILE_WEBDAV=$(kubectl exec $POD_WEBDAV_SERVER -- sh -c 'ls -t /var/lib/dav/data/backups/*.tar.gz | head -1')
+echo "Extracting $BACKUP_FILE_WEBDAV..."
+kubectl exec $POD_WEBDAV_SERVER -- sh -c "rm -rf /tmp/restore-webdav && mkdir -p /tmp/restore-webdav && tar -xzf $BACKUP_FILE_WEBDAV -C /tmp/restore-webdav"
+RESTORED_DATA_WEBDAV=$(kubectl exec $POD_WEBDAV_SERVER -- cat /tmp/restore-webdav/data/test.txt)
+echo "Restored data (WebDAV): $RESTORED_DATA_WEBDAV"
+
+if [ "$ORIGINAL_DATA" != "$RESTORED_DATA_WEBDAV" ]; then
+    echo "ERROR: WebDAV backup data mismatch!"
+    echo "Expected: $ORIGINAL_DATA"
+    echo "Got: $RESTORED_DATA_WEBDAV"
+    exit 1
+fi
+echo "✓ WebDAV backup integrity verified"
 
 echo ""
 echo "=== Verifying Deployment Restored ==="
