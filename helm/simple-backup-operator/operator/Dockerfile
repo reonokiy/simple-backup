@@ -2,11 +2,9 @@ FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock operator.py ./
 
 RUN uv sync --frozen --no-dev
-
-COPY operator.py ./
 
 ENV PYTHONUNBUFFERED=1
 
