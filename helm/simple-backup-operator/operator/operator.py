@@ -1,8 +1,9 @@
 import os
 import logging
 from datetime import datetime
-from kubernetes import client, config, watch
-from kubernetes.client.rest import ApiException
+from typing import Dict, Any, Optional
+from kubernetes import client, config, watch  # type: ignore
+from kubernetes.client.rest import ApiException  # type: ignore
 
 logging.basicConfig(
     level=logging.INFO,

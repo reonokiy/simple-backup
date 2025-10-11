@@ -13,11 +13,12 @@ import tomllib
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
+from typing import Optional, Dict, Any, List, Tuple
 import opendal
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
-from pyrage import x25519
-import pyrage
+from pyrage import x25519  # type: ignore
+import pyrage  # type: ignore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +27,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_config_from_file(config_path=None):
+def load_config_from_file(config_path: Optional[str] = None) -> Dict[str, Any]:
     if not config_path:
         for path in ['config.toml', 'config.yaml', 'config.yml']:
             if os.path.exists(path):
@@ -54,7 +55,7 @@ def load_config_from_file(config_path=None):
         return {}
 
 
-def load_config():
+def load_config() -> Dict[str, Any]:
     file_config = load_config_from_file()
     
     config = {
@@ -72,23 +73,14 @@ def load_config():
         'encryption_identity': os.getenv('BACKUP_ENCRYPTION_IDENTITY') or file_config.get('encryption', {}).get('identity'),
     }
     
-    destinations = []
-    if 'destinations' in file_config and file_config['destinations']:
-        destinations = file_config['destinations']
-    elif os.getenv('BACKUP_DEST_SERVICE') or file_config.get('dest_service'):
-        legacy_dest = {
-            'service': os.getenv('BACKUP_DEST_SERVICE') or file_config.get('dest_service'),
-            'root': os.getenv('BACKUP_DEST_ROOT') or file_config.get('dest_root', ''),
-            'storage': file_config.get('storage', {}),
-        }
-        destinations = [legacy_dest]
+    destinations = file_config.get('destinations', [])
     
     config['destinations'] = destinations
     
     if not config['source_path']:
         raise ValueError("BACKUP_SOURCE_PATH environment variable or source_path in config file is required")
     if not config['destinations']:
-        raise ValueError("At least one destination is required (use 'destinations' array or legacy 'dest_service' config)")
+        raise ValueError("At least one destination is required in 'destinations' array")
     
     valid_compressions = ['none', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'tar.zst', 'zip', 'gzip']
     if config['compression'] not in valid_compressions:
@@ -100,12 +92,12 @@ def load_config():
     return config
 
 
-def create_source_operator(source_path):
+def create_source_operator(source_path: str) -> opendal.Operator:
     return opendal.Operator("fs", root=source_path)
 
 
-def get_service_config(service_type, storage_config):
-    def get_config_value(key, env_var):
+def get_service_config(service_type: str, storage_config: Dict[str, Any]) -> Dict[str, Any]:
+    def get_config_value(key: str, env_var: str) -> Optional[str]:
         return os.getenv(env_var) or storage_config.get(key)
     
     service_configs = {
@@ -159,11 +151,11 @@ def get_service_config(service_type, storage_config):
     return service_configs[service_type]
 
 
-def create_dest_operator(service_type, storage_config=None):
+def create_dest_operator(service_type: str, storage_config: Optional[Dict[str, Any]] = None) -> opendal.Operator:
     if storage_config is None:
         storage_config = {}
     
-    opendal_config = {}
+    opendal_config: Dict[str, str] = {}
     
     for key, value in os.environ.items():
         if key.startswith('OPENDAL_'):
@@ -180,7 +172,7 @@ def create_dest_operator(service_type, storage_config=None):
     return opendal.Operator(service_type, **config)
 
 
-def test_destination_connectivity(dest):
+def test_destination_connectivity(dest: Dict[str, Any]) -> bool:
     dest_service = dest['service']
     dest_root = dest.get('root', '')
     storage_config = dest.get('storage', {})
@@ -211,7 +203,7 @@ def test_destination_connectivity(dest):
         return False
 
 
-def validate_destinations(destinations):
+def validate_destinations(destinations: List[Dict[str, Any]]) -> bool:
     logger.info(f"Validating {len(destinations)} destination(s)...")
     
     results = []
@@ -233,7 +225,7 @@ def validate_destinations(destinations):
     return True
 
 
-def create_archive(source_path, compression_format, archive_name=None):
+def create_archive(source_path: str, compression_format: str, archive_name: Optional[str] = None) -> Tuple[str, str]:
     if not archive_name:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         base_name = Path(source_path).name
@@ -308,13 +300,13 @@ def create_archive(source_path, compression_format, archive_name=None):
         raise e
 
 
-def encrypt_file(input_path, recipient_key):
+def encrypt_file(input_path: str, recipient_key: str) -> str:
     try:
         with open(input_path, 'rb') as f:
             plaintext = f.read()
         
         recipient = x25519.Recipient.from_str(recipient_key)
-        encrypted = pyrage.encrypt(plaintext, [recipient])
+        encrypted = pyrage.encrypt(plaintext, [recipient])  # type: ignore
         
         encrypted_path = f"{input_path}.age"
         with open(encrypted_path, 'wb') as f:
@@ -327,13 +319,13 @@ def encrypt_file(input_path, recipient_key):
         raise e
 
 
-def decrypt_file(input_path, identity_key):
+def decrypt_file(input_path: str, identity_key: str) -> str:
     try:
         with open(input_path, 'rb') as f:
             encrypted = f.read()
         
         identity = x25519.Identity.from_str(identity_key)
-        decrypted = pyrage.decrypt(encrypted, [identity])
+        decrypted = pyrage.decrypt(encrypted, [identity])  # type: ignore
         
         if input_path.endswith('.age'):
             decrypted_path = input_path[:-4]
@@ -350,7 +342,7 @@ def decrypt_file(input_path, identity_key):
         raise e
 
 
-def extract_archive(archive_path, dest_path):
+def extract_archive(archive_path: str, dest_path: str) -> bool:
     try:
         archive_name = Path(archive_path).name
         
@@ -392,7 +384,8 @@ def extract_archive(archive_path, dest_path):
             output_path = os.path.join(dest_path, archive_name[:-3])
             with gzip.open(archive_path, 'rb') as f_in:
                 with open(output_path, 'wb') as f_out:
-                    f_out.write(f_in.read())
+                    data = f_in.read()
+                    f_out.write(data)
         
         else:
             raise ValueError(f"Unsupported archive format: {archive_name}")
@@ -404,7 +397,7 @@ def extract_archive(archive_path, dest_path):
         raise e
 
 
-def restore(backup_path, dest_path, dest_service='fs', identity_key=None, storage_config=None):
+def restore(backup_path: str, dest_path: str, dest_service: str = 'fs', identity_key: Optional[str] = None, storage_config: Optional[Dict[str, Any]] = None) -> bool:
     logger.info(f"Starting restore from {backup_path} to {dest_path}")
     
     try:
@@ -448,7 +441,7 @@ def restore(backup_path, dest_path, dest_service='fs', identity_key=None, storag
         return False
 
 
-def list_available_backups(dest_service, dest_root='', storage_config=None):
+def list_available_backups(dest_service: str, dest_root: str = '', storage_config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     try:
         dest_op = create_dest_operator(dest_service, storage_config)
         backups = list_backups(dest_op, dest_root)
@@ -469,7 +462,7 @@ def list_available_backups(dest_service, dest_root='', storage_config=None):
         return []
 
 
-def backup_file(src_op, dest_op, rel_path, dest_root):
+def backup_file(src_op: opendal.Operator, dest_op: opendal.Operator, rel_path: str, dest_root: str) -> bool:
     try:
         data = src_op.read(rel_path)
         
@@ -483,7 +476,7 @@ def backup_file(src_op, dest_op, rel_path, dest_root):
         return False
 
 
-def list_files_recursive(op, path=""):
+def list_files_recursive(op: opendal.Operator, path: str = "") -> List[str]:
     files = []
     try:
         entries = op.list(path)
@@ -504,7 +497,7 @@ def list_files_recursive(op, path=""):
     return files
 
 
-def parse_backup_timestamp(filename):
+def parse_backup_timestamp(filename: str) -> Optional[datetime]:
     patterns = [
         r'backup_.*?_(\d{8}_\d{6})',
         r'(\d{8}_\d{6})',
@@ -526,7 +519,7 @@ def parse_backup_timestamp(filename):
     return None
 
 
-def list_backups(dest_op, dest_root):
+def list_backups(dest_op: opendal.Operator, dest_root: str) -> List[Dict[str, Any]]:
     backups = []
     try:
         path = dest_root if dest_root else ""
@@ -551,7 +544,7 @@ def list_backups(dest_op, dest_root):
     return backups
 
 
-def apply_retention_policy(backups, max_backups=0, daily=7, weekly=4, monthly=6, yearly=2):
+def apply_retention_policy(backups: List[Dict[str, Any]], max_backups: int = 0, daily: int = 7, weekly: int = 4, monthly: int = 6, yearly: int = 2) -> List[Dict[str, Any]]:
     if not backups:
         return []
     
@@ -601,7 +594,7 @@ def apply_retention_policy(backups, max_backups=0, daily=7, weekly=4, monthly=6,
     return to_delete
 
 
-def cleanup_old_backups(dest_op, retention_config):
+def cleanup_old_backups(dest_op: opendal.Operator, retention_config: Dict[str, Any]) -> None:
     if not any([
         retention_config.get('max_backups', 0) > 0,
         retention_config.get('daily', 0) > 0,
@@ -649,7 +642,7 @@ def cleanup_old_backups(dest_op, retention_config):
     logger.info(f"Cleanup completed: {deleted_count} backups deleted, {len(backups) - deleted_count} retained")
 
 
-def backup(source_path, destinations, compression='none', archive_name=None, retention_config=None, encryption_enabled=False, encryption_recipient=None):
+def backup(source_path: str, destinations: List[Dict[str, Any]], compression: str = 'none', archive_name: Optional[str] = None, retention_config: Optional[Dict[str, Any]] = None, encryption_enabled: bool = False, encryption_recipient: Optional[str] = None) -> bool:
     logger.info(f"Starting backup from {source_path} to {len(destinations)} destination(s)")
     
     if not destinations:
@@ -738,7 +731,7 @@ def backup(source_path, destinations, compression='none', archive_name=None, ret
     return all(r['success'] for r in results)
 
 
-def run_backup_job():
+def run_backup_job() -> None:
     try:
         config = load_config()
         
@@ -766,7 +759,7 @@ def run_backup_job():
         logger.error(f"Scheduled backup failed: {e}")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description='Simple Backup - Backup and Restore Tool')
     subparsers = parser.add_subparsers(dest='command', help='Command to execute')
     

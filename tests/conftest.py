@@ -3,16 +3,17 @@ import tempfile
 import pytest
 from pathlib import Path
 from datetime import datetime
+from typing import Generator, Dict, Any, List
 
 
 @pytest.fixture
-def temp_dir():
+def temp_dir() -> Generator[str, None, None]:
     with tempfile.TemporaryDirectory() as tmpdir:
         yield tmpdir
 
 
 @pytest.fixture
-def mock_source_dir(temp_dir):
+def mock_source_dir(temp_dir: str) -> str:
     source = Path(temp_dir) / "source"
     source.mkdir()
     
@@ -27,15 +28,15 @@ def mock_source_dir(temp_dir):
 
 
 @pytest.fixture
-def mock_dest_dir(temp_dir):
+def mock_dest_dir(temp_dir: str) -> str:
     dest = Path(temp_dir) / "dest"
     dest.mkdir()
     return str(dest)
 
 
 @pytest.fixture
-def age_keypair():
-    from pyrage import x25519
+def age_keypair() -> Dict[str, str]:
+    from pyrage import x25519  # type: ignore
     identity = x25519.Identity.generate()
     recipient = identity.to_public()
     
@@ -46,7 +47,7 @@ def age_keypair():
 
 
 @pytest.fixture
-def mock_env(monkeypatch, mock_source_dir, mock_dest_dir):
+def mock_env(monkeypatch: pytest.MonkeyPatch, mock_source_dir: str, mock_dest_dir: str) -> Dict[str, str]:
     env_vars = {
         'BACKUP_SOURCE_PATH': mock_source_dir,
         'BACKUP_DEST_SERVICE': 'fs',
@@ -67,7 +68,7 @@ def mock_env(monkeypatch, mock_source_dir, mock_dest_dir):
 
 
 @pytest.fixture
-def sample_backups():
+def sample_backups() -> List[Dict[str, Any]]:
     now = datetime.now()
     return [
         {'path': 'backup_20240101_120000.tar.gz', 'timestamp': datetime(2024, 1, 1, 12, 0, 0), 'size': 1024},

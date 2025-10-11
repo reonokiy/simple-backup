@@ -1,0 +1,65 @@
+# Simple Backup Configuration File (YAML)
+# Copy this file to config.yaml and customize for your needs
+
+source_path: /path/to/backup
+
+cron_schedule: ""
+
+compression: tar.zst
+
+archive_name: ""
+
+retention:
+  max_backups: 0
+  daily: 7
+  weekly: 4
+  monthly: 6
+  yearly: 2
+
+encryption:
+  enabled: false
+  recipient: ""
+  identity: ""
+
+# Destinations Configuration
+# You can backup to multiple destinations simultaneously
+destinations:
+  - service: s3
+    root: backups/
+    storage:
+      bucket: my-primary-bucket
+      region: us-east-1
+      access_key_id: AKIAxxxxx
+      secret_access_key: xxxxx
+  
+  - service: s3
+    root: backups/
+    storage:
+      bucket: my-secondary-bucket
+      region: us-west-2
+      access_key_id: AKIAyyyyy
+      secret_access_key: yyyyy
+      endpoint: https://s3-compatible.example.com
+
+# Additional destination examples (commented out):
+
+# Azure Blob Storage:
+#   - service: azblob
+#     root: backups/
+#     storage:
+#       container: my-backups
+#       account_name: myaccount
+#       account_key: xxxxx
+
+# Google Cloud Storage:
+#   - service: gcs
+#     root: backups/
+#     storage:
+#       bucket: my-backup-bucket
+#       credential: /path/to/service-account.json
+
+# Local filesystem:
+#   - service: fs
+#     root: backups/
+#     storage:
+#       root: /mnt/backups

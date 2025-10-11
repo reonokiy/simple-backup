@@ -55,7 +55,7 @@ identity = ""
 # You can define multiple backup destinations
 # Backups will be sent to all configured destinations
 
-# Example: Single destination (backward compatible)
+# Example: Single destination
 [[destinations]]
 service = "s3"
 root = "backups/"
@@ -93,10 +93,3 @@ secret_access_key = "xxxxx"
 # 
 # [destinations.storage]
 # root = "/mnt/local-backup"
-
-# Legacy single destination format (deprecated but still supported)
-# dest_service = "s3"
-# dest_root = "backups/"
-# [storage]
-# bucket = "my-backup-bucket"
-# region = "us-east-1"

@@ -38,21 +38,19 @@ See the [Configuration Guide](docs/configuration.md) for detailed information.
 ### Quick Start with Config File
 
 ```bash
-# Copy and edit the example config
-cp config.toml.example config.toml
-# Edit config.toml with your settings
-python main.py
+# Using TOML (recommended)
+cp config.example.toml config.toml
+
+# Or using YAML
+cp config.example.yaml config.yaml
 ```
 
-### Quick Start with Environment Variables
+### Quick Start with Config File (YAML)
 
 ```bash
-export BACKUP_SOURCE_PATH=/path/to/backup
-export BACKUP_DEST_SERVICE=s3
-export S3_BUCKET=my-bucket
-export S3_REGION=us-east-1
-export S3_ACCESS_KEY_ID=your-key
-export S3_SECRET_ACCESS_KEY=your-secret
+# Copy and edit the example config
+cp config.yaml.example config.yaml
+# Edit config.yaml with your settings
 python main.py
 ```
 
@@ -153,14 +151,12 @@ This allows you to keep non-sensitive config in files and override with environm
 
 See [Configuration Guide](docs/configuration.md) for full details. Key options:
 
-- `source_path` / `BACKUP_SOURCE_PATH`: Path to backup (required)
-- `dest_service` / `BACKUP_DEST_SERVICE`: Storage service type (required for single destination)
-- `destinations`: Array of destinations for multi-destination backups
-- `dest_root` / `BACKUP_DEST_ROOT`: Root path in destination (optional)
-- `compression` / `BACKUP_COMPRESSION`: Compression format (default: `tar.zst`)
+- `source_path`: Path to backup (required)
+- `destinations`: Array of destinations for backups (required)
+- `compression`: Compression format (default: `tar.zst`)
   - Formats: `none`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `zip`, `gzip`
-- `archive_name` / `BACKUP_ARCHIVE_NAME`: Custom archive name (optional)
-- `cron_schedule` / `BACKUP_CRON_SCHEDULE`: Cron expression for scheduling (optional)
+- `archive_name`: Custom archive name (optional)
+- `cron_schedule`: Cron expression for scheduling (optional)
 
 ### Storage Services
 
@@ -170,17 +166,24 @@ See [Configuration Guide](docs/configuration.md) for service-specific configurat
 
 ## Examples
 
-### Single Destination (Legacy)
+### Basic Backup Configuration
 
 ```toml
 # config.toml
 source_path = "/home/user/documents"
-dest_service = "s3"
-dest_root = "backups/documents/"
 compression = "tar.zst"
 cron_schedule = "0 2 * * *"  # Daily at 2 AM
 
-[storage]
+[retention]
+daily = 7
+weekly = 4
+monthly = 6
+
+[[destinations]]
+service = "s3"
+root = "backups/documents/"
+
+[destinations.storage]
 bucket = "my-backup-bucket"
 region = "us-west-2"
 # Credentials set via environment variables for security
@@ -234,33 +237,6 @@ root = "backups/"
 container = "azure-backups"
 account_name = "myaccount"
 account_key = "xxxxx"
-```
-
-### Environment Variables Example
-
-```bash
-export BACKUP_SOURCE_PATH=/home/user/documents
-export BACKUP_DEST_SERVICE=s3
-export BACKUP_DEST_ROOT=backups/documents/
-export BACKUP_COMPRESSION=tar.zst
-export BACKUP_CRON_SCHEDULE="0 2 * * *"
-export S3_BUCKET=my-backup-bucket
-export S3_REGION=us-west-2
-export S3_ACCESS_KEY_ID=AKIAxxxxx
-export S3_SECRET_ACCESS_KEY=xxxxx
-python main.py
-```
-
-### OPENDAL Variables Example
-
-```bash
-export BACKUP_SOURCE_PATH=/home/user/documents
-export BACKUP_DEST_SERVICE=s3
-export OPENDAL_S3_BUCKET=my-backup-bucket
-export OPENDAL_S3_REGION=us-west-2
-export OPENDAL_S3_ACCESS_KEY_ID=AKIAxxxxx
-export OPENDAL_S3_SECRET_ACCESS_KEY=xxxxx
-python main.py
 ```
 
 ### Cron Schedule Examples
