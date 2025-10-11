@@ -47,7 +47,7 @@ def load_config_from_file(config_path=None):
             with open(config_path, 'r') as f:
                 return yaml.safe_load(f) or {}
         except ImportError:
-            logger.warning("PyYAML not installed. Install with: pip install pyyaml")
+            logger.error("PyYAML import failed.")
             return {}
     else:
         logger.warning(f"Unsupported config file format: {config_path}")
