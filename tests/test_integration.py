@@ -11,8 +11,7 @@ def test_integration_backup_tar_to_fs(mock_source_dir, mock_dest_dir, monkeypatc
     
     success = backup(
         source_path=mock_source_dir,
-        dest_service='fs',
-        dest_root='',
+        destinations=[{'service': 'fs', 'root': ''}],
         compression='tar',
         archive_name='test_backup'
     )
@@ -32,8 +31,7 @@ def test_integration_backup_tar_gz_to_fs(mock_source_dir, mock_dest_dir, monkeyp
     
     success = backup(
         source_path=mock_source_dir,
-        dest_service='fs',
-        dest_root='',
+        destinations=[{'service': 'fs', 'root': ''}],
         compression='tar.gz',
         archive_name='test_backup'
     )
@@ -49,8 +47,7 @@ def test_integration_backup_tar_zst_to_fs(mock_source_dir, mock_dest_dir, monkey
     
     success = backup(
         source_path=mock_source_dir,
-        dest_service='fs',
-        dest_root='',
+        destinations=[{'service': 'fs', 'root': ''}],
         compression='tar.zst',
         archive_name='test_backup'
     )
@@ -66,8 +63,7 @@ def test_integration_backup_zip_to_fs(mock_source_dir, mock_dest_dir, monkeypatc
     
     success = backup(
         source_path=mock_source_dir,
-        dest_service='fs',
-        dest_root='',
+        destinations=[{'service': 'fs', 'root': ''}],
         compression='zip',
         archive_name='test_backup'
     )
@@ -86,8 +82,7 @@ def test_integration_backup_with_encryption(mock_source_dir, mock_dest_dir, monk
     
     success = backup(
         source_path=mock_source_dir,
-        dest_service='fs',
-        dest_root='',
+        destinations=[{'service': 'fs', 'root': ''}],
         compression='tar.gz',
         archive_name='encrypted_backup',
         encryption_enabled=True,
@@ -113,8 +108,7 @@ def test_integration_backup_with_dest_root(mock_source_dir, mock_dest_dir, monke
     
     success = backup(
         source_path=mock_source_dir,
-        dest_service='fs',
-        dest_root=dest_root,
+        destinations=[{'service': 'fs', 'root': dest_root}],
         compression='tar',
         archive_name='test_backup'
     )
@@ -131,8 +125,7 @@ def test_integration_backup_with_retention(mock_source_dir, mock_dest_dir, monke
     for i in range(10):
         backup(
             source_path=mock_source_dir,
-            dest_service='fs',
-            dest_root='',
+            destinations=[{'service': 'fs', 'root': ''}],
             compression='tar'
         )
     
@@ -147,8 +140,7 @@ def test_integration_backup_with_retention(mock_source_dir, mock_dest_dir, monke
     
     success = backup(
         source_path=mock_source_dir,
-        dest_service='fs',
-        dest_root='',
+        destinations=[{'service': 'fs', 'root': ''}],
         compression='tar',
         retention_config=retention_config
     )
@@ -159,22 +151,20 @@ def test_integration_backup_with_retention(mock_source_dir, mock_dest_dir, monke
     assert len(backup_files) <= 5
 
 
-def test_integration_backup_no_compression(mock_source_dir, mock_dest_dir, monkeypatch):
+def test_integration_backup_tar_format(mock_source_dir, mock_dest_dir, monkeypatch):
     monkeypatch.setenv('FS_ROOT', mock_dest_dir)
     
     success = backup(
         source_path=mock_source_dir,
-        dest_service='fs',
-        dest_root='',
-        compression='none'
+        destinations=[{'service': 'fs', 'root': ''}],
+        compression='tar'
     )
     
     assert success is True
     
-    expected_files = ['file1.txt', 'file2.txt', 'subdir/file3.txt']
-    for expected_file in expected_files:
-        file_path = Path(mock_dest_dir) / expected_file
-        assert file_path.exists()
+    dest_path = Path(mock_dest_dir)
+    archives = list(dest_path.glob('*.tar'))
+    assert len(archives) == 1
 
 
 def test_integration_backup_auto_archive_name(mock_source_dir, mock_dest_dir, monkeypatch):
@@ -182,8 +172,7 @@ def test_integration_backup_auto_archive_name(mock_source_dir, mock_dest_dir, mo
     
     success = backup(
         source_path=mock_source_dir,
-        dest_service='fs',
-        dest_root='',
+        destinations=[{'service': 'fs', 'root': ''}],
         compression='tar'
     )
     

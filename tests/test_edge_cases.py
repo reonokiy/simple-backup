@@ -122,7 +122,7 @@ def test_backup_archive_exception(mock_create_dest_op):
         with open(os.path.join(source_dir, "test.txt"), 'w') as f:
             f.write("test")
         
-        result = backup(source_dir, 'fs', '', compression='tar.gz', archive_name='test')
+        result = backup(source_dir, [{'service': 'fs', 'root': ''}], compression='tar.gz', archive_name='test')
         
         assert result is False
     finally:
@@ -153,6 +153,6 @@ def test_backup_no_compression_with_failures(mock_create_dest_op, mock_create_so
     
     mock_src_op.read.side_effect = [b"content1", Exception("Read failed")]
     
-    result = backup('/test/source', 'fs', '', compression='none')
+    result = backup('/test/source', [{'service': 'fs', 'root': ''}], compression='tar')
     
     assert result is False

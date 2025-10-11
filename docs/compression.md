@@ -15,7 +15,6 @@ The backup program supports multiple compression formats. By default, it uses Zs
 | `tar` | `.tar` | Uncompressed archive | Fast, no compression overhead |
 | `zip` | `.zip` | ZIP archive with deflate | Cross-platform compatibility |
 | `gzip` | `.gz` | Gzip single file | For single file backups only |
-| `none` | N/A | No compression or archiving | Backup individual files as-is |
 
 ## Setting Compression Format
 
@@ -116,29 +115,12 @@ export BACKUP_COMPRESSION=gzip
 
 **Best for:** Compressing individual large files
 
-### No Compression
-
-```bash
-export BACKUP_COMPRESSION=none
-```
-
-**Behavior:**
-- Backs up files individually without archiving
-- Preserves directory structure on destination
-- Uses OpenDAL for both reading and writing
-
-**Best for:** 
-- Incremental backups
-- Already compressed data
-- Need to access individual files remotely
-
 ## Compression Comparison
 
 Based on typical mixed data (documents, code, configs):
 
 | Format | Relative Speed | Relative Size | CPU Usage |
 |--------|---------------|---------------|-----------|
-| none | ⚡⚡⚡⚡⚡ Fastest | 💾💾💾💾💾 Largest | ▁ Minimal |
 | tar | ⚡⚡⚡⚡⚡ Fastest | 💾💾💾💾💾 Largest | ▁ Minimal |
 | tar.zst | ⚡⚡⚡⚡ Very Fast | 💾💾 Small | ▃ Low |
 | tar.gz | ⚡⚡⚡ Fast | 💾💾💾 Medium | ▄ Medium |
@@ -166,15 +148,15 @@ export BACKUP_COMPRESSION=zip
 ```
 Works everywhere, easy to extract.
 
-### For Incremental/Sync-Style Backups
+### For Fast Local Backups
 ```bash
-export BACKUP_COMPRESSION=none
+export BACKUP_COMPRESSION=tar
 ```
-Backup files individually for selective restore.
+No compression overhead, preserves directory structure.
 
 ## Custom Archive Names
 
-When using compression (any format except `none`), you can specify a custom archive name:
+You can specify a custom archive name:
 
 ```bash
 export BACKUP_ARCHIVE_NAME=myproject_backup

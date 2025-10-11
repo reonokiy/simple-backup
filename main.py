@@ -82,7 +82,7 @@ def load_config() -> Dict[str, Any]:
     if not config['destinations']:
         raise ValueError("At least one destination is required in 'destinations' array")
     
-    valid_compressions = ['none', 'tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'tar.zst', 'zip', 'gzip']
+    valid_compressions = ['tar', 'tar.gz', 'tar.bz2', 'tar.xz', 'tar.zst', 'zip', 'gzip']
     if config['compression'] not in valid_compressions:
         raise ValueError(f"Invalid compression format. Must be one of: {', '.join(valid_compressions)}")
     
@@ -227,7 +227,7 @@ def validate_destinations(destinations: List[Dict[str, Any]]) -> bool:
 
 def create_archive(source_path: str, compression_format: str, archive_name: Optional[str] = None) -> Tuple[str, str]:
     if not archive_name:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         base_name = Path(source_path).name
         archive_name = f"backup_{base_name}_{timestamp}"
     
@@ -642,7 +642,7 @@ def cleanup_old_backups(dest_op: opendal.Operator, retention_config: Dict[str, A
     logger.info(f"Cleanup completed: {deleted_count} backups deleted, {len(backups) - deleted_count} retained")
 
 
-def backup(source_path: str, destinations: List[Dict[str, Any]], compression: str = 'none', archive_name: Optional[str] = None, retention_config: Optional[Dict[str, Any]] = None, encryption_enabled: bool = False, encryption_recipient: Optional[str] = None) -> bool:
+def backup(source_path: str, destinations: List[Dict[str, Any]], compression: str = 'tar', archive_name: Optional[str] = None, retention_config: Optional[Dict[str, Any]] = None, encryption_enabled: bool = False, encryption_recipient: Optional[str] = None) -> bool:
     logger.info(f"Starting backup from {source_path} to {len(destinations)} destination(s)")
     
     if not destinations:
@@ -651,79 +651,44 @@ def backup(source_path: str, destinations: List[Dict[str, Any]], compression: st
     
     results = []
     
-    if compression == 'none':
-        src_op = create_source_operator(source_path)
-        files = list_files_recursive(src_op)
-        logger.info(f"Found {len(files)} files to backup")
+    archive_path, temp_dir = create_archive(source_path, compression, archive_name)
+    
+    try:
+        if encryption_enabled and encryption_recipient:
+            logger.info("Encrypting archive...")
+            encrypted_path = encrypt_file(archive_path, encryption_recipient)
+            os.remove(archive_path)
+            archive_path = encrypted_path
+        
+        with open(archive_path, 'rb') as f:
+            archive_data = f.read()
+        
+        archive_filename = Path(archive_path).name
         
         for idx, dest in enumerate(destinations, 1):
             dest_service = dest['service']
             dest_root = dest.get('root', '')
             storage_config = dest.get('storage', {})
             
-            logger.info(f"Backing up to destination {idx}/{len(destinations)}: {dest_service}")
+            logger.info(f"Uploading to destination {idx}/{len(destinations)}: {dest_service}")
             
             try:
                 dest_op = create_dest_operator(dest_service, storage_config)
+                dest_path = os.path.join(dest_root, archive_filename) if dest_root else archive_filename
                 
-                success_count = 0
-                fail_count = 0
+                dest_op.write(dest_path, archive_data)
+                logger.info(f"Destination {idx} completed: {archive_filename} -> {dest_path}")
                 
-                for file_path in files:
-                    if backup_file(src_op, dest_op, file_path, dest_root):
-                        success_count += 1
-                    else:
-                        fail_count += 1
+                results.append({'destination': dest_service, 'success': True})
                 
-                logger.info(f"Destination {idx} completed: {success_count} succeeded, {fail_count} failed")
-                dest_success = fail_count == 0
-                results.append({'destination': dest_service, 'success': dest_success})
-                
-                if dest_success and retention_config:
+                if retention_config:
                     retention_with_root = {**retention_config, 'dest_root': dest_root}
                     cleanup_old_backups(dest_op, retention_with_root)
             except Exception as e:
-                logger.error(f"Failed to backup to destination {idx} ({dest_service}): {e}")
+                logger.error(f"Failed to upload to destination {idx} ({dest_service}): {e}")
                 results.append({'destination': dest_service, 'success': False})
-    else:
-        archive_path, temp_dir = create_archive(source_path, compression, archive_name)
-        
-        try:
-            if encryption_enabled and encryption_recipient:
-                logger.info("Encrypting archive...")
-                encrypted_path = encrypt_file(archive_path, encryption_recipient)
-                os.remove(archive_path)
-                archive_path = encrypted_path
-            
-            with open(archive_path, 'rb') as f:
-                archive_data = f.read()
-            
-            archive_filename = Path(archive_path).name
-            
-            for idx, dest in enumerate(destinations, 1):
-                dest_service = dest['service']
-                dest_root = dest.get('root', '')
-                storage_config = dest.get('storage', {})
-                
-                logger.info(f"Uploading to destination {idx}/{len(destinations)}: {dest_service}")
-                
-                try:
-                    dest_op = create_dest_operator(dest_service, storage_config)
-                    dest_path = os.path.join(dest_root, archive_filename) if dest_root else archive_filename
-                    
-                    dest_op.write(dest_path, archive_data)
-                    logger.info(f"Destination {idx} completed: {archive_filename} -> {dest_path}")
-                    
-                    results.append({'destination': dest_service, 'success': True})
-                    
-                    if retention_config:
-                        retention_with_root = {**retention_config, 'dest_root': dest_root}
-                        cleanup_old_backups(dest_op, retention_with_root)
-                except Exception as e:
-                    logger.error(f"Failed to upload to destination {idx} ({dest_service}): {e}")
-                    results.append({'destination': dest_service, 'success': False})
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
     
     success_count = sum(1 for r in results if r['success'])
     logger.info(f"Backup completed: {success_count}/{len(destinations)} destinations succeeded")
