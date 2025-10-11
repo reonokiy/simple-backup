@@ -63,7 +63,7 @@ jobs:
         run: helm plugin install https://github.com/helm-unittest/helm-unittest
 
       - name: Run Helm chart tests
-        run: helm unittest helm/simple-backup-operator -v
+        run: helm unittest helm/simple-backup-operator
 
       - name: Lint Helm chart
         run: helm lint helm/simple-backup-operator
