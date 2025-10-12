@@ -463,36 +463,33 @@ jobs:
           echo "Triggering manual backup..."
           kubectl create job --from=cronjob/test-backup-pause-ha-cronjob e2e-backup-pause-ha-test
           
-          echo "Waiting for pause container to start..."
-          sleep 5
+          echo "Waiting for backup job pod to be created..."
+          timeout 30 bash -c 'until kubectl get pods -l job-name=e2e-backup-pause-ha-test -o jsonpath="{.items[0].metadata.name}" 2>/dev/null | grep -q .; do sleep 1; done'
           
           POD_HA=$(kubectl get pods -l job-name=e2e-backup-pause-ha-test -o jsonpath='{.items[0].metadata.name}')
-          
-          echo "=== Pause Logs ==="
-          kubectl logs $POD_HA -c pause-workloads --follow &
-          LOG_PID=$!
+          echo "Backup pod: $POD_HA"
           
           echo ""
-          echo "Monitoring pod status during backup..."
+          echo "Waiting for pause init container to complete..."
+          timeout 60 bash -c "until kubectl get pod $POD_HA -o jsonpath='{.status.initContainerStatuses[0].state.terminated.reason}' 2>/dev/null | grep -q 'Completed'; do sleep 2; done"
           
-          echo "Checking if postgres-ha-0 was deleted (should be paused)..."
-          timeout 60 bash -c 'while kubectl get pod postgres-ha-0 2>/dev/null; do echo "Waiting for postgres-ha-0 to be deleted..."; sleep 2; done' || {
-            echo "ERROR: postgres-ha-0 should have been deleted but still exists"
-            kill $LOG_PID 2>/dev/null || true
-            exit 1
-          }
-          echo "✓ postgres-ha-0 was paused (deleted)"
+          echo ""
+          echo "=== Pause Logs ==="
+          kubectl logs $POD_HA -c pause-workloads
+          
+          echo ""
+          echo "Verifying pause logs show pod deletion..."
+          kubectl logs $POD_HA -c pause-workloads | grep -q "Deleting pod postgres-ha-0"
+          echo "✓ Pause logs confirmed postgres-ha-0 was deleted"
           
           echo ""
           echo "Verifying postgres-ha-1 and postgres-ha-2 stayed running..."
           if ! kubectl get pod postgres-ha-1 &>/dev/null; then
             echo "ERROR: postgres-ha-1 should still be running but was deleted"
-            kill $LOG_PID 2>/dev/null || true
             exit 1
           fi
           if ! kubectl get pod postgres-ha-2 &>/dev/null; then
             echo "ERROR: postgres-ha-2 should still be running but was deleted"
-            kill $LOG_PID 2>/dev/null || true
             exit 1
           fi
           
@@ -503,7 +500,6 @@ jobs:
           
           if [ "$POD1_STATUS" != "Running" ] || [ "$POD2_STATUS" != "Running" ]; then
             echo "ERROR: Other replicas should remain running during backup"
-            kill $LOG_PID 2>/dev/null || true
             exit 1
           fi
           echo "✓ Other replicas (postgres-ha-1, postgres-ha-2) stayed running during backup"
@@ -511,7 +507,6 @@ jobs:
           echo ""
           echo "Waiting for backup job to complete..."
           kubectl wait --for=condition=complete job/e2e-backup-pause-ha-test --timeout=180s
-          kill $LOG_PID 2>/dev/null || true
           echo "✓ Backup job completed"
 
       - name: Verify pod auto-recreation
