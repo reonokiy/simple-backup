@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: simple-backup-operator
+  repository: ghcr.io/reonokiy/simple-backup-operator
   pullPolicy: IfNotPresent
   tag: "latest"
 
@@ -41,7 +41,7 @@ operator:
   logLevel: INFO
 
 backupImage:
-  repository: simple-backup
+  repository: ghcr.io/reonokiy/simple-backup
   tag: latest
   pullPolicy: IfNotPresent
 
