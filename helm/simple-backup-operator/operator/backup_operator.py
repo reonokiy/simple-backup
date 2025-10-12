@@ -70,30 +70,42 @@ class BackupJobController:
         
         return destination
     
-    def _generate_pause_script(self, workloads, namespace):
+    def _generate_pause_script(self, pvc_name, namespace):
         script_lines = ["set -e"]
-        for wl in workloads:
-            kind = wl['kind'].lower()
-            name = wl['name']
-            
-            script_lines.append(f"echo 'Pausing {kind}/{name}...'")
-            script_lines.append(f"kubectl get {kind} {name} -n {namespace} -o json | jq '.spec.replicas' > /shared/{name}-replicas.txt")
-            script_lines.append(f"kubectl scale {kind} {name} -n {namespace} --replicas=0")
-            script_lines.append(f"kubectl wait --for=delete pod -l app={name} -n {namespace} --timeout=300s || true")
-            script_lines.append(f"echo '{kind}/{name} paused'")
+        
+        script_lines.append(f"echo 'Finding all pods using PVC {pvc_name}...'")
+        script_lines.append(f"PODS=$(kubectl get pods -n {namespace} -o json | jq -r '.items[] | select(.spec.volumes[]?.persistentVolumeClaim.claimName == \"{pvc_name}\") | select(.metadata.labels.app != \"simple-backup\") | .metadata.name')")
+        script_lines.append(f"if [ -z \"$PODS\" ]; then")
+        script_lines.append(f"  echo 'WARNING: No pods found using PVC {pvc_name} (excluding backup job itself)'")
+        script_lines.append(f"  echo 'This might be expected if the PVC is not currently in use by any workload'")
+        script_lines.append(f"  echo 'none' > /shared/paused-pods.txt")
+        script_lines.append(f"  exit 0")
+        script_lines.append(f"fi")
+        script_lines.append(f"")
+        script_lines.append(f"echo \"Found pods: $PODS\"")
+        script_lines.append(f"echo \"$PODS\" > /shared/paused-pods.txt")
+        script_lines.append(f"")
+        script_lines.append(f"# Delete all pods using this PVC")
+        script_lines.append(f"for POD in $PODS; do")
+        script_lines.append(f"  echo \"Deleting pod $POD...\"")
+        script_lines.append(f"  kubectl delete pod $POD -n {namespace} --wait=false")
+        script_lines.append(f"done")
+        script_lines.append(f"")
+        script_lines.append(f"# Wait for all pods to be deleted")
+        script_lines.append(f"for POD in $PODS; do")
+        script_lines.append(f"  kubectl wait --for=delete pod/$POD -n {namespace} --timeout=300s || true")
+        script_lines.append(f"done")
+        script_lines.append(f"echo 'All pods using PVC {pvc_name} have been stopped'")
         
         return "\n".join(script_lines)
     
-    def _generate_resume_script(self, workloads, namespace):
+    def _generate_resume_script(self, namespace):
         script_lines = ["set -e", "sleep 5"]
-        for wl in workloads:
-            kind = wl['kind'].lower()
-            name = wl['name']
-            
-            script_lines.append(f"echo 'Resuming {kind}/{name}...'")
-            script_lines.append(f"REPLICAS=$(cat /shared/{name}-replicas.txt || echo 1)")
-            script_lines.append(f"kubectl scale {kind} {name} -n {namespace} --replicas=$REPLICAS")
-            script_lines.append(f"echo \"{kind}/{name} resumed with $REPLICAS replicas\"")
+        
+        script_lines.append(f"echo 'Resume: Pods will be automatically recreated by their controller'")
+        script_lines.append(f"PAUSED_PODS=$(cat /shared/paused-pods.txt || echo 'unknown')")
+        script_lines.append(f"echo \"Paused pods were: $PAUSED_PODS\"")
+        script_lines.append(f"echo 'Controllers (Deployment/StatefulSet/ReplicaSet) will recreate the deleted pods'")
         
         return "\n".join(script_lines)
         
@@ -112,8 +124,14 @@ class BackupJobController:
         resources_spec = spec.get('resources', {})
         pause_workloads = spec.get('pauseWorkloads', {})
         
+        source_path = source['path']
+        if 'pvcName' in source:
+            backup_source_path = f"/data{source_path}" if not source_path.startswith('/data') else source_path
+        else:
+            backup_source_path = source_path
+            
         env_vars = [
-            client.V1EnvVar(name="BACKUP_SOURCE_PATH", value=source['path']),
+            client.V1EnvVar(name="BACKUP_SOURCE_PATH", value=backup_source_path),
             client.V1EnvVar(name="BACKUP_DEST_SERVICE", value=destination['service']),
             client.V1EnvVar(name="BACKUP_DEST_ROOT", value=destination.get('root', '')),
             client.V1EnvVar(name="BACKUP_COMPRESSION", value=compression),
@@ -165,7 +183,7 @@ class BackupJobController:
             volume_mounts.append(
                 client.V1VolumeMount(
                     name="data",
-                    mount_path=source['path'],
+                    mount_path="/data",
                     read_only=True
                 )
             )
@@ -197,12 +215,15 @@ class BackupJobController:
         init_containers = []
         shared_volume_needed = False
         
-        if pause_workloads.get('enabled'):
-            workloads = pause_workloads.get('workloads', [])
-            if workloads:
+        pause_enabled = pause_workloads if isinstance(pause_workloads, bool) else pause_workloads.get('enabled', False)
+        
+        if pause_enabled:
+            if 'pvcName' not in source:
+                logger.warning(f"pauseWorkloads is enabled but no pvcName specified in source. Skipping pause/resume.")
+            else:
                 shared_volume_needed = True
-                pause_script = self._generate_pause_script(workloads, namespace)
-                resume_script = self._generate_resume_script(workloads, namespace)
+                pvc_name = source['pvcName']
+                pause_script = self._generate_pause_script(pvc_name, namespace)
                 
                 init_containers.append(
                     client.V1Container(
@@ -210,25 +231,6 @@ class BackupJobController:
                         image="bitnami/kubectl:latest",
                         command=["/bin/sh", "-c"],
                         args=[pause_script],
-                        volume_mounts=[
-                            client.V1VolumeMount(
-                                name="shared",
-                                mount_path="/shared"
-                            )
-                        ],
-                        resources=client.V1ResourceRequirements(
-                            limits={'cpu': '100m', 'memory': '128Mi'},
-                            requests={'cpu': '50m', 'memory': '64Mi'}
-                        )
-                    )
-                )
-                
-                containers.append(
-                    client.V1Container(
-                        name="resume-workloads",
-                        image="bitnami/kubectl:latest",
-                        command=["/bin/sh", "-c"],
-                        args=[resume_script],
                         volume_mounts=[
                             client.V1VolumeMount(
                                 name="shared",
@@ -271,7 +273,7 @@ class BackupJobController:
                 init_containers=init_containers if init_containers else None,
                 containers=containers,
                 volumes=volumes if volumes else None,
-                service_account_name=self.service_account_name if pause_workloads.get('enabled') else None
+                service_account_name=self.service_account_name if pause_enabled else None
             )
         )
         

@@ -63,7 +63,7 @@ class TestBackupJobIntegration:
         assert container.image == 'simple-backup:latest'
         
         env_dict = {e.name: e.value for e in container.env if e.value}
-        assert env_dict['BACKUP_SOURCE_PATH'] == '/var/lib/postgresql/data'
+        assert env_dict['BACKUP_SOURCE_PATH'] == '/data/var/lib/postgresql/data'
         assert env_dict['BACKUP_DEST_SERVICE'] == 's3'
         assert env_dict['BACKUP_STORAGE_BUCKET'] == 'backups/postgresql/'
         assert env_dict['BACKUP_ENCRYPTION_ENABLED'] == 'true'

@@ -424,14 +424,9 @@ class TestBackupJobController:
         backupjob = {
             'metadata': {'name': 'test', 'namespace': 'default', 'uid': 'uid'},
             'spec': {
-                'source': {'path': '/data'},
+                'source': {'path': '/data', 'pvcName': 'test-pvc'},
                 'destination': {'service': 's3'},
-                'pauseWorkloads': {
-                    'enabled': True,
-                    'workloads': [
-                        {'kind': 'Deployment', 'name': 'myapp'}
-                    ]
-                }
+                'pauseWorkloads': True
             }
         }
         
@@ -445,16 +440,15 @@ class TestBackupJobController:
         assert len(pod_spec.init_containers) == 1
         assert pod_spec.init_containers[0].name == 'pause-workloads'
         assert pod_spec.init_containers[0].image == 'bitnami/kubectl:latest'
-        assert 'kubectl scale deployment myapp' in pod_spec.init_containers[0].args[0]
-        assert '/shared/myapp-replicas.txt' in pod_spec.init_containers[0].args[0]
+        pause_script = pod_spec.init_containers[0].args[0]
+        assert 'Finding all pods using PVC test-pvc' in pause_script
+        assert 'kubectl get pods' in pause_script
+        assert 'kubectl delete pod' in pause_script
+        assert 'select(.metadata.labels.app != "simple-backup")' in pause_script
         
-        assert len(pod_spec.containers) == 2
-        backup_container = next(c for c in pod_spec.containers if c.name == 'backup')
-        resume_container = next(c for c in pod_spec.containers if c.name == 'resume-workloads')
-        
-        assert resume_container.image == 'bitnami/kubectl:latest'
-        assert 'kubectl scale deployment myapp' in resume_container.args[0]
-        assert '/shared/myapp-replicas.txt' in resume_container.args[0]
+        assert len(pod_spec.containers) == 1
+        backup_container = pod_spec.containers[0]
+        assert backup_container.name == 'backup'
         
         shared_volume = next(v for v in pod_spec.volumes if v.name == 'shared')
         assert shared_volume.empty_dir is not None
@@ -465,14 +459,9 @@ class TestBackupJobController:
         backupjob = {
             'metadata': {'name': 'test', 'namespace': 'default', 'uid': 'uid'},
             'spec': {
-                'source': {'path': '/data'},
+                'source': {'path': '/data', 'pvcName': 'db-pvc'},
                 'destination': {'service': 's3'},
-                'pauseWorkloads': {
-                    'enabled': True,
-                    'workloads': [
-                        {'kind': 'StatefulSet', 'name': 'database'}
-                    ]
-                }
+                'pauseWorkloads': True
             }
         }
         
@@ -484,12 +473,12 @@ class TestBackupJobController:
         pod_spec = cronjob.spec.job_template.spec.template.spec
         
         assert len(pod_spec.init_containers) == 1
-        assert 'kubectl scale statefulset database' in pod_spec.init_containers[0].args[0]
-        assert '/shared/database-replicas.txt' in pod_spec.init_containers[0].args[0]
+        pause_script = pod_spec.init_containers[0].args[0]
+        assert 'Finding all pods using PVC db-pvc' in pause_script
+        assert 'kubectl delete pod' in pause_script
         
-        resume_container = next(c for c in pod_spec.containers if c.name == 'resume-workloads')
-        assert 'kubectl scale statefulset database' in resume_container.args[0]
-        assert '/shared/database-replicas.txt' in resume_container.args[0]
+        assert len(pod_spec.containers) == 1
+        assert pod_spec.containers[0].name == 'backup' 
     
     def test_create_cronjob_with_pause_workloads_disabled(self, controller):
         backupjob = {
@@ -543,36 +532,26 @@ class TestBackupJobController:
         assert pod_spec.service_account_name is None
     
     def test_generate_pause_script(self, controller):
-        workloads = [
-            {'kind': 'Deployment', 'name': 'myapp'},
-            {'kind': 'StatefulSet', 'name': 'database'}
-        ]
-        
-        script = controller._generate_pause_script(workloads, 'default')
+        script = controller._generate_pause_script('test-pvc', 'default')
         
         assert 'set -e' in script
-        assert 'kubectl get deployment myapp -n default' in script
-        assert 'kubectl scale deployment myapp -n default --replicas=0' in script
-        assert '/shared/myapp-replicas.txt' in script
-        assert 'kubectl get statefulset database -n default' in script
-        assert 'kubectl scale statefulset database -n default --replicas=0' in script
-        assert '/shared/database-replicas.txt' in script
-        assert 'kubectl wait --for=delete pod' in script
+        assert 'Finding all pods using PVC test-pvc' in script
+        assert 'kubectl get pods -n default -o json' in script
+        assert 'select(.spec.volumes[]?.persistentVolumeClaim.claimName == "test-pvc")' in script
+        assert 'select(.metadata.labels.app != "simple-backup")' in script
+        assert 'kubectl delete pod $POD -n default --wait=false' in script
+        assert 'kubectl wait --for=delete pod/$POD -n default --timeout=300s' in script
+        assert '/shared/paused-pods.txt' in script
     
     def test_generate_resume_script(self, controller):
-        workloads = [
-            {'kind': 'Deployment', 'name': 'myapp'},
-            {'kind': 'StatefulSet', 'name': 'database'}
-        ]
-        
-        script = controller._generate_resume_script(workloads, 'default')
+        script = controller._generate_resume_script('default')
         
         assert 'set -e' in script
         assert 'sleep 5' in script
-        assert 'kubectl scale deployment myapp -n default --replicas=$REPLICAS' in script
-        assert 'cat /shared/myapp-replicas.txt' in script
-        assert 'kubectl scale statefulset database -n default --replicas=$REPLICAS' in script
-        assert 'cat /shared/database-replicas.txt' in script
+        assert '/shared/paused-pods.txt' in script
+        assert 'Pods will be automatically recreated by their controller' in script
+        assert 'Controllers (Deployment/StatefulSet/ReplicaSet) will recreate the deleted pods' in script
+
     
     def test_load_storage_configs_success(self, controller):
         mock_configmap = Mock()

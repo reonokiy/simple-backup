@@ -39,9 +39,8 @@ spec:
   
   pauseWorkloads:
     enabled: true
-    workloads:
-    - kind: Deployment
-      name: postgres
+    # Automatically pauses all pods using the PVC specified in source.pvcName
+    # The controller will recreate the pods after backup completes
 
 ---
 apiVersion: simple-backup.nokiy.net/v1alpha1
@@ -85,7 +84,6 @@ spec:
   
   pauseWorkloads:
     enabled: true
-    workloads:
-    - kind: Deployment
-      name: postgres
+    # Automatically pauses all pods using the PVC specified in source.pvcName
+    # The controller will recreate the pods after backup completes
 

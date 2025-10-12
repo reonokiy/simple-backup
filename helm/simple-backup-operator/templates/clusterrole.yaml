@@ -80,4 +80,5 @@ rules:
   - get
   - list
   - watch
+  - delete
 

@@ -222,9 +222,6 @@ jobs:
               monthly: 6
             pauseWorkloads:
               enabled: true
-              workloads:
-                - kind: Deployment
-                  name: test-app
           ---
           apiVersion: simple-backup.nokiy.net/v1alpha1
           kind: BackupJob
@@ -292,9 +289,6 @@ jobs:
           echo "=== Backup Logs ==="
           kubectl logs $POD_FS -c backup
           
-          echo "=== Resume Logs ==="
-          kubectl logs $POD_FS -c resume-workloads
-          
           echo ""
           echo "=== WebDAV Backup Logs ==="
           POD_WEBDAV=$(kubectl get pods -l job-name=e2e-backup-webdav-test -o jsonpath='{.items[0].metadata.name}')
@@ -307,10 +301,7 @@ jobs:
           POD_FS=$(kubectl get pods -l job-name=e2e-backup-fs-test -o jsonpath='{.items[0].metadata.name}')
           
           echo "Checking pause logs..."
-          kubectl logs $POD_FS -c pause-workloads | grep -q "deployment/test-app paused"
-          
-          echo "Checking resume logs..."
-          kubectl logs $POD_FS -c resume-workloads | grep -q "deployment/test-app resumed with 2 replicas"
+          kubectl logs $POD_FS -c pause-workloads | grep -q "Deleted pod:"
 
       - name: Verify backups succeeded
         run: |
@@ -368,6 +359,197 @@ jobs:
           echo ""
           echo "Note: FS backup integrity verified via logs (backup succeeded with correct file)"
 
+      - name: Test Smart Pod Pausing (High Availability)
+        run: |
+          echo "=== Creating StatefulSet with 3 replicas ==="
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: postgres-ha
+          spec:
+            clusterIP: None
+            selector:
+              app: postgres-ha
+            ports:
+            - port: 5432
+          ---
+          apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: postgres-ha
+          spec:
+            serviceName: postgres-ha
+            replicas: 3
+            selector:
+              matchLabels:
+                app: postgres-ha
+            volumeClaimTemplates:
+            - metadata:
+                name: data
+              spec:
+                accessModes: [ "ReadWriteOnce" ]
+                resources:
+                  requests:
+                    storage: 1Gi
+            template:
+              metadata:
+                labels:
+                  app: postgres-ha
+              spec:
+                containers:
+                - name: postgres
+                  image: busybox:latest
+                  command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    mkdir -p /data/pgdata
+                    echo "PostgreSQL replica \$HOSTNAME data" > /data/pgdata/postgresql.conf
+                    echo "Server \$HOSTNAME is running" > /data/pgdata/status.txt
+                    while true; do
+                      echo "\$(date): \$HOSTNAME is serving traffic"
+                      sleep 10
+                    done
+                  volumeMounts:
+                  - name: data
+                    mountPath: /data
+          EOF
+          
+          echo "Waiting for StatefulSet to be ready..."
+          kubectl wait --for=jsonpath='{.status.readyReplicas}'=3 statefulset/postgres-ha --timeout=180s
+          echo "✓ StatefulSet with 3 replicas ready"
+
+      - name: Verify each pod has its own PVC
+        run: |
+          for i in 0 1 2; do
+            PVC_NAME=$(kubectl get pod postgres-ha-$i -o jsonpath='{.spec.volumes[?(@.name=="data")].persistentVolumeClaim.claimName}')
+            echo "postgres-ha-$i uses PVC: $PVC_NAME"
+            if [ "$PVC_NAME" != "data-postgres-ha-$i" ]; then
+              echo "ERROR: Expected PVC data-postgres-ha-$i, got $PVC_NAME"
+              exit 1
+            fi
+          done
+          echo "✓ Each pod has its own PVC"
+
+      - name: Create BackupJob for postgres-ha-0
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: simple-backup.nokiy.net/v1alpha1
+          kind: BackupJob
+          metadata:
+            name: test-backup-pause-ha
+          spec:
+            schedule: "*/5 * * * *"
+            source:
+              pvcName: data-postgres-ha-0
+              path: /data
+            destination:
+              service: fs
+              root: /tmp/backups-ha
+            compression: tar.gz
+            retention:
+              daily: 3
+            pauseWorkloads:
+              enabled: true
+          EOF
+          
+          echo "Waiting for CronJob creation..."
+          timeout 30 bash -c 'until kubectl get cronjob test-backup-pause-ha-cronjob; do sleep 2; done'
+          echo "✓ CronJob created"
+
+      - name: Trigger HA pause backup and verify selective pausing
+        run: |
+          echo "Triggering manual backup..."
+          kubectl create job --from=cronjob/test-backup-pause-ha-cronjob e2e-backup-pause-ha-test
+          
+          echo "Waiting for pause container to start..."
+          sleep 5
+          
+          POD_HA=$(kubectl get pods -l job-name=e2e-backup-pause-ha-test -o jsonpath='{.items[0].metadata.name}')
+          
+          echo "=== Pause Logs ==="
+          kubectl logs $POD_HA -c pause-workloads --follow &
+          LOG_PID=$!
+          
+          echo ""
+          echo "Monitoring pod status during backup..."
+          
+          echo "Checking if postgres-ha-0 was deleted (should be paused)..."
+          timeout 60 bash -c 'while kubectl get pod postgres-ha-0 2>/dev/null; do echo "Waiting for postgres-ha-0 to be deleted..."; sleep 2; done' || {
+            echo "ERROR: postgres-ha-0 should have been deleted but still exists"
+            kill $LOG_PID 2>/dev/null || true
+            exit 1
+          }
+          echo "✓ postgres-ha-0 was paused (deleted)"
+          
+          echo ""
+          echo "Verifying postgres-ha-1 and postgres-ha-2 stayed running..."
+          if ! kubectl get pod postgres-ha-1 &>/dev/null; then
+            echo "ERROR: postgres-ha-1 should still be running but was deleted"
+            kill $LOG_PID 2>/dev/null || true
+            exit 1
+          fi
+          if ! kubectl get pod postgres-ha-2 &>/dev/null; then
+            echo "ERROR: postgres-ha-2 should still be running but was deleted"
+            kill $LOG_PID 2>/dev/null || true
+            exit 1
+          fi
+          
+          POD1_STATUS=$(kubectl get pod postgres-ha-1 -o jsonpath='{.status.phase}')
+          POD2_STATUS=$(kubectl get pod postgres-ha-2 -o jsonpath='{.status.phase}')
+          echo "postgres-ha-1 status: $POD1_STATUS"
+          echo "postgres-ha-2 status: $POD2_STATUS"
+          
+          if [ "$POD1_STATUS" != "Running" ] || [ "$POD2_STATUS" != "Running" ]; then
+            echo "ERROR: Other replicas should remain running during backup"
+            kill $LOG_PID 2>/dev/null || true
+            exit 1
+          fi
+          echo "✓ Other replicas (postgres-ha-1, postgres-ha-2) stayed running during backup"
+          
+          echo ""
+          echo "Waiting for backup job to complete..."
+          kubectl wait --for=condition=complete job/e2e-backup-pause-ha-test --timeout=180s
+          kill $LOG_PID 2>/dev/null || true
+          echo "✓ Backup job completed"
+
+      - name: Verify pod auto-recreation
+        run: |
+          POD_HA=$(kubectl get pods -l job-name=e2e-backup-pause-ha-test -o jsonpath='{.items[0].metadata.name}')
+          
+          echo "=== Backup Logs ==="
+          kubectl logs $POD_HA -c backup
+          
+          echo ""
+          echo "Verifying postgres-ha-0 was auto-recreated..."
+          kubectl wait --for=condition=ready pod/postgres-ha-0 --timeout=120s
+          echo "✓ postgres-ha-0 auto-recreated and ready"
+          
+          echo ""
+          echo "Verifying StatefulSet still has 3 replicas..."
+          READY_REPLICAS=$(kubectl get statefulset postgres-ha -o jsonpath='{.status.readyReplicas}')
+          if [ "$READY_REPLICAS" != "3" ]; then
+            echo "ERROR: Expected 3 ready replicas, got $READY_REPLICAS"
+            exit 1
+          fi
+          echo "✓ StatefulSet has 3 ready replicas"
+          
+          echo ""
+          echo "Verifying backup succeeded..."
+          kubectl logs $POD_HA -c backup | grep -q "Backup completed: 1/1 destinations succeeded"
+          echo "✓ Backup succeeded"
+          
+          echo ""
+          echo "Verifying data integrity in recreated pod..."
+          RECREATED_DATA=$(kubectl exec postgres-ha-0 -- cat /data/pgdata/postgresql.conf)
+          echo "Data in recreated pod: $RECREATED_DATA"
+          if ! echo "$RECREATED_DATA" | grep -q "PostgreSQL replica postgres-ha-0 data"; then
+            echo "ERROR: Data in recreated pod doesn't match expected content"
+            exit 1
+          fi
+          echo "✓ Data persisted correctly after pod recreation"
+
       - name: Collect logs on failure
         if: failure()
         run: |
@@ -377,17 +559,23 @@ jobs:
           echo "=== BackupJob Status ==="
           kubectl get backupjob test-backup-fs -o yaml
           kubectl get backupjob test-backup-webdav -o yaml
+          kubectl get backupjob test-backup-pause-ha -o yaml || true
           
           echo "=== CronJob Status ==="
           kubectl get cronjob test-backup-fs-cronjob -o yaml || true
           kubectl get cronjob test-backup-webdav-cronjob -o yaml || true
+          kubectl get cronjob test-backup-pause-ha-cronjob -o yaml || true
           
           echo "=== Job Status ==="
           kubectl get job e2e-backup-fs-test -o yaml || true
           kubectl get job e2e-backup-webdav-test -o yaml || true
+          kubectl get job e2e-backup-pause-ha-test -o yaml || true
           
           echo "=== Pod Status ==="
           kubectl get pods
+          
+          echo "=== StatefulSet Status ==="
+          kubectl get statefulset postgres-ha -o yaml || true
           
           echo "=== WebDAV Server Logs ==="
           kubectl logs -l app=webdav --tail=50 || true
@@ -418,4 +606,17 @@ jobs:
             echo "✅ Deployment replicas restored to 2" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Deployment replicas: $REPLICAS (expected 2)" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if kubectl get job e2e-backup-pause-ha-test -o jsonpath='{.status.succeeded}' | grep -q "1" 2>/dev/null; then
+            echo "✅ HA pause backup job completed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ HA pause backup job failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          READY_REPLICAS=$(kubectl get statefulset postgres-ha -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+          if [ "$READY_REPLICAS" = "3" ]; then
+            echo "✅ StatefulSet has 3 ready replicas (HA maintained)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ StatefulSet replicas: $READY_REPLICAS (expected 3)" >> $GITHUB_STEP_SUMMARY
           fi

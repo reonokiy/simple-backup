@@ -344,17 +344,20 @@ spec:
 
 ### Pausing Workloads During Backup
 
-For data consistency, you can pause Deployments or StatefulSets during backup operations. This is useful for databases or stateful applications that require quiescing before backup.
+For data consistency, you can automatically pause pods using a specific PVC during backup operations. This is particularly useful for:
+
+- **StatefulSets** with multiple replicas: Only pods using the specific PVC being backed up are paused, maintaining service availability through other replicas
+- **Databases** or stateful applications requiring quiescing before backup
 
 ```yaml
 apiVersion: backup.simple-backup.io/v1alpha1
 kind: BackupJob
 metadata:
-  name: database-backup
+  name: postgres-backup
 spec:
   source:
     path: /var/lib/postgresql/data
-    pvcName: postgres-data
+    pvcName: postgres-data-0  # Specific PVC to backup
   
   destination:
     service: s3
@@ -366,11 +369,8 @@ spec:
   
   pauseWorkloads:
     enabled: true
-    workloads:
-      - kind: StatefulSet
-        name: postgres
-      - kind: Deployment
-        name: pgbouncer
+    # Automatically finds and pauses all pods using postgres-data-0
+    # Other pods (using postgres-data-1, postgres-data-2, etc.) continue running
   
   retention:
     daily: 7
@@ -378,16 +378,48 @@ spec:
 ```
 
 **How it works:**
-1. **Init container** scales workloads to 0 replicas and waits for pods to terminate
-2. **Main container** performs the backup
-3. **Sidecar container** restores workloads to original replica count
+
+1. **Init container** finds all pods using the specified PVC (`source.pvcName`)
+2. **Deletes those pods** (not scaling the entire workload to 0)
+3. **Waits for deletion** to complete
+4. **Main container** performs the backup from the PVC
+5. **Kubernetes controller** (Deployment/StatefulSet/ReplicaSet) automatically recreates the deleted pods
+6. **Sidecar container** confirms pods are being recreated
+
+**Example with StatefulSet (3 replicas):**
+
+```yaml
+# StatefulSet has 3 pods:
+# - postgres-0 → postgres-data-0  ← Being backed up (paused)
+# - postgres-1 → postgres-data-1  ← Still running ✓
+# - postgres-2 → postgres-data-2  ← Still running ✓
+
+apiVersion: backup.simple-backup.io/v1alpha1
+kind: BackupJob
+metadata:
+  name: postgres-0-backup
+spec:
+  source:
+    path: /var/lib/postgresql/data
+    pvcName: postgres-data-0  # Only backup this specific PVC
+  
+  destination:
+    service: s3
+    root: backups/postgres-0
+    secretRef: s3-credentials
+  
+  pauseWorkloads:
+    enabled: true  # Only postgres-0 will be paused
+```
 
 **Important notes:**
-- Requires the operator's service account to have permissions to scale workloads (already configured in the Helm chart)
+
+- Requires the operator's service account to have pod delete permissions (already configured in the Helm chart)
 - The backup pod uses `serviceAccountName: simple-backup-operator`
-- Original replica counts are preserved in a shared volume
-- If backup fails, workloads may remain paused - monitor backup jobs carefully
-- Only use for applications that can tolerate downtime during backup window
+- Only pods mounting the specified PVC are affected
+- Other replicas continue serving traffic during backup
+- Deleted pods are automatically recreated by their controller (Deployment/StatefulSet)
+- For StatefulSets with multiple PVCs per pod, create separate BackupJobs for each PVC
 
 ---
 

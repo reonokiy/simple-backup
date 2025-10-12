@@ -141,27 +141,16 @@ spec:
                 description: Suspend the backup job
               pauseWorkloads:
                 type: object
-                description: Workloads to pause during backup
+                description: Pause pods using the source PVC during backup to ensure data consistency
                 properties:
                   enabled:
                     type: boolean
                     default: false
-                    description: Enable pausing workloads
-                  workloads:
-                    type: array
-                    items:
-                      type: object
-                      required:
-                      - kind
-                      - name
-                      properties:
-                        kind:
-                          type: string
-                          enum: [Deployment, StatefulSet]
-                          description: Workload kind
-                        name:
-                          type: string
-                          description: Workload name
+                    description: |
+                      Enable automatic pod pausing. When enabled, all pods using the source.pvcName 
+                      will be deleted before backup and automatically recreated after backup completes.
+                      This ensures only pods using the specific PVC are affected, maintaining service 
+                      availability for other replicas (e.g., in StatefulSet with multiple PVCs).
           status:
             type: object
             properties:
