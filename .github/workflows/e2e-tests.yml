@@ -301,7 +301,7 @@ jobs:
           POD_FS=$(kubectl get pods -l job-name=e2e-backup-fs-test -o jsonpath='{.items[0].metadata.name}')
           
           echo "Checking pause logs..."
-          kubectl logs $POD_FS -c pause-workloads | grep -q "Deleted pod:"
+          kubectl logs $POD_FS -c pause-workloads | grep -q "Deleting pod"
 
       - name: Verify backups succeeded
         run: |
